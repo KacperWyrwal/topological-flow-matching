@@ -1,0 +1,6 @@
+name: residual_nn
+hidden_dim: 256
+time_embed_dim: 128
+num_res_block: 1
+
+

@@ -1,0 +1,6 @@
+name: gaussians_to_moons
+type: distribution
+moons_noise: 0.05
+radius: 2.0
+gaussians_noise: 0.2
+laplacian: fully_connected

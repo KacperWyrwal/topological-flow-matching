@@ -1,0 +1,5 @@
+name: gcn
+hidden_dim: 256
+time_embed_dim: 128
+
+

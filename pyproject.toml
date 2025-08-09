@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "topofm"
+version = "0.1.0"
+description = "Topological Flow Matching: SDE-based OT, controls, models, training utilities"
+requires-python = ">=3.10"
+authors = [{ name = "Kacper Wyrwał" }]
+keywords = ["optimal-transport", "sde", "bridges", "graph", "diffusion", "ml"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "torch>=2.1",
+  "numpy>=1.24",
+  "scikit-learn>=1.3",
+  "geomloss>=0.2.6",
+  "POT>=0.9.3",
+  "matplotlib>=3.7",
+  "plotly>=5.22",
+  "pandas>=2.0",
+  "scipy>=1.11",
+  "torch-ema>=0.3",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+cli = [
+  "hydra-core>=1.3",
+  "omegaconf>=2.3",
+  "hydra-optuna-sweeper>=1.2",
+  "wandb>=0.17",
+]
+
+[project.scripts]
+topofm-train = "topofm.cli.train:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["topofm*"]
+exclude = []
+
+
