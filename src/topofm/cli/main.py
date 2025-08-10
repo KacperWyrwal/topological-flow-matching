@@ -77,9 +77,9 @@ def run_validation(
 
 ) -> torch.nn.Module:
     assert cfg.data.type == 'tensor', "Only tensor datasets are foldable."
-    metric_name = cfg.trainer.validation_metric
+    metric_name = cfg.mode.validation.metric
     model = _build_model(cfg, ...)
-    early_stopping = ... 
+    early_stopping = cfg.trainer.early_stopping 
     wnb_logger = ...
   
     validation_
