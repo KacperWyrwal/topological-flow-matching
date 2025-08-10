@@ -9,6 +9,8 @@ import torch
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from topofm import *
+from topofm.data import AnalyticToAnalyticTestLoader, EmpiricalToEmpiricalTestLoader, MatchingTestLoader, MatchingTrainLoader
+from topofm.distributions import AnalyticInFrame, Empirical, EmpiricalInFrame
 
 
 def _build_model(cfg: DictConfig, data_dim: int, laplacian: Optional[torch.Tensor] = None) -> torch.nn.Module:
@@ -41,11 +43,19 @@ def _build_frame(cfg: DictConfig) -> torch.Tensor:
 
 def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
     frame = _build_frame(cfg)
+
     if cfg.data.name == "brain":
         x0, x1 = load_brain_data() # TODO pass option to retrieve the training split
         mu0, mu1 = Empirical(x0), Empirical(x1)
-        mu0, mu1 = InFrame(mu0, frame), InFrame(mu1, frame)
+        mu0, mu1 = EmpiricalInFrame(mu0, frame), EmpiricalInFrame(mu1, frame)
         return MatchingDataset(mu0, mu1)
+
+    if cfg.data.name == "gaussians_to_moons":
+        mu0 = EightGaussians(radius=cfg.data.radius, noise_std=cfg.data.gaussians_noise)
+        mu1 = Moons(noise_std=cfg.data.moons_noise)
+        mu0, mu1 = AnalyticInFrame(mu0, frame), AnalyticInFrame(mu1, frame)
+        return MatchingDataset(mu0, mu1)
+
     raise ValueError(f"Unknown dataset: {cfg.data.name}")
 
 
@@ -86,47 +96,38 @@ def _build_coupling(cfg: DictConfig, dataset: MatchingDataset, sde: SDE) -> Coup
     mu0, mu1 = dataset.mu0, dataset.mu1
     if cfg.coupling.name == 'independent':
         return IndependentCoupling(mu0, mu1)
+
     if cfg.coupling.name == 'ot':
         ot_solver = _build_ot_solver(cfg, sde=sde)
         return OTCoupling(mu0, mu1, ot_solver=ot_solver)
+
     if cfg.coupling.name == 'online_ot':
         ot_solver = _build_ot_solver(cfg, sde=sde)
         return OnlineOTCoupling(mu0, mu1, ot_solver=ot_solver)
 
 
 def _build_train_data_loader(cfg: DictConfig, dataset: MatchingDataset, sde: SDE) -> MatchingDataLoader:
-    if cfg.data.task == 'matching':
-        coupling = _build_coupling(cfg, dataset=dataset, sde=sde)
-        return MatchingDataLoader(
-            coupling=coupling, 
-            batch_size=cfg.train.batch_size, 
-            num_batches=cfg.train.num_batches, # TODO set this in dataset config
-        )
-    raise NotImplementedError
+    coupling = _build_coupling(cfg, dataset=dataset, sde=sde)
+    return MatchingTrainLoader(
+        coupling=coupling, 
+        batch_size=cfg.train.batch_size, 
+        num_batches=cfg.train.num_batches, # TODO tie this to the dataset name
+    )
 
 
-def _build_eval_data_loader(cfg: DictConfig, dataset: MatchingDataset) -> DataLoader:
-    if cfg.data.task == 'matching':
-        dataset = to_tensor_dataset(dataset) # TODO Implement either in data or in utils. 
-        return DataLoader(
+def _build_test_data_loader(cfg: DictConfig, dataset: MatchingDataset) -> MatchingTestLoader:
+    if cfg.data.task == 'empirical_to_empirical':
+        return EmpiricalToEmpiricalTestLoader(
             dataset=dataset, 
-            batch_size=cfg.train.batch_size,
-            shuffle=False, # No need to shuffle validation data
+            batch_size=cfg.test.batch_size, 
         )
-    if cfg.data.task == 'generation':
-        raise NotImplementedError 
-    raise ValueError
-
-
-def _build_test_data_loader(cfg: DictConfig, dataset: MatchingDataset) -> DataLoader:
-    if cfg.data.task == 'matching':
-        dataset = to_tensor_dataset(dataset)
-        return DataLoader(
+    if cfg.data.task == 'analytic_to_analytic':
+        return AnalyticToAnalyticTestLoader(
             dataset=dataset, 
-            batch_size=cfg.train.batch_size, 
-            shuffle=False, # No need to shuffle test data 
+            batch_size=cfg.test.batch_size, 
+            num_batches=cfg.test.num_batches, # TODO maybe replace this with test_size, easier to work with
         )
-    if cfg.data.task == 'generation':
+    if cfg.data.task == 'analytic_to_empirical':
         raise NotImplementedError
     raise ValueError
 
@@ -147,7 +148,7 @@ def run_test(
     train_dataset, eval_dataset = train_dataset.train_test_split(cfg.train.eval_size)
 
     train_data_loader = _build_train_data_loader(cfg, dataset=train_dataset, sde=sde)
-    eval_data_loader = _build_eval_data_loader(cfg, dataset=eval_dataset)
+    eval_data_loader = _build_test_data_loader(cfg, dataset=eval_dataset)
     test_data_loader = _build_test_data_loader(cfg, dataset=test_dataset)
     time_sampler = _build_time_sampler(cfg)
 

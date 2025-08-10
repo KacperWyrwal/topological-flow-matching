@@ -1,5 +1,6 @@
 import math
 import torch
+from abc import abstractmethod
 from torch.distributions import Distribution
 from topofm import Frame, StandardFrame
 
@@ -108,29 +109,38 @@ class Empirical(Distribution):
 class InFrame(Distribution):
     def __init__(self, base: Distribution, frame: Frame | None = None) -> None:
         assert not isinstance(base, InFrame), "Wrapping InFrame in InFrame is likely not the indended usage."
-
         super().__init__(validate_args=False)
         self.frame = StandardFrame() if frame is None else frame
+        self.base = base
 
-        if isinstance(base, Empirical):
-            self.base = Empirical(samples=self.frame.transform(base.samples))
-            self.precomputed = True 
-        else:
-            self.base = base 
-            self.precomputed = False
-    
+    @abstractmethod
+    def sample(self, shape: torch.Size) -> torch.Tensor: ... 
+
+
+class EmpiricalInFrame(InFrame):
+    def __init__(self, base: Empirical, frame: Frame | None = None) -> None:
+        assert isinstance(base, Empirical), "EmpiricalInFrame requires an Empirical base distribution."
+        super().__init__(base, frame)
+        # Precompute transformed samples for efficiency
+        self.base = Empirical(samples=self.frame.transform(base.samples))
+
     def sample(self, shape: torch.Size) -> torch.Tensor:
-        x = self.base.sample(shape)
-        if self.precomputed is True:
-            return x
-        else:
-            return self.frame.transform(x)
+        # Already transformed, just sample
+        return self.base.sample(shape)
 
-    def __getitem__(self, idx) -> "InFrame":
-        return InFrame(base=self.base[idx], frame=self.frame)
+    def __getitem__(self, idx) -> "EmpiricalInFrame":
+        return type(self)(base=self.base[idx], frame=self.frame)
 
     @property
-    def num_samples(self) -> torch.Size:
-        assert isinstance(self.base, Empirical), "num_samples only available for an Empirical base"
+    def num_samples(self) -> int:
         return self.base.num_samples
 
+
+class AnalyticInFrame(InFrame):
+    def __init__(self, base: Distribution, frame: Frame | None = None) -> None:
+        assert not isinstance(base, Empirical), "AnalyticInFrame should not wrap an Empirical distribution."
+        super().__init__(base, frame)
+
+    def sample(self, shape: torch.Size) -> torch.Tensor:
+        x = self.base.sample(shape)
+        return self.frame.transform(x)

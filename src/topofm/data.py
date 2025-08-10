@@ -57,17 +57,10 @@ class MatchingDataset(torch.utils.data.Dataset):
         self.mu0 = mu0 
         self.mu1 = mu1 
 
+    # TODO maybe remove this method 
     def sample(self, shape: torch.Size) -> tuple[torch.Tensor, torch.Tensor]:
         assert len(shape) <= 1, "Sample shape should be (S,) or ()."
         return self.mu0.sample(shape), self.mu1.sample(shape)
-
-    @property 
-    def target_is_empirical(self) -> bool:
-        return isinstance(self.mu1.base, Empirical)
-    
-    @property 
-    def source_is_empirical(self) -> bool:
-        return isinstance(self.mu0.base, Empirical)
 
     @abstractmethod
     def train_test_split(self, test_size: float = 0.2): ... 
@@ -131,7 +124,7 @@ class EmpiricalToEmpiricalDataset(MatchingDataset):
         return [EmpiricalToEmpiricalDataset(self.mu0[idx], self.mu1[idx]) for idx in _chunk_index(n=n, k=k)]
 
 
-class MatchingTrainDataLoader:
+class MatchingTrainLoader:
     def __init__(self, coupling: Coupling, batch_size: int, num_batches: int) -> None:
         self.coupling = coupling
         self.batch_size = batch_size
@@ -145,19 +138,48 @@ class MatchingTrainDataLoader:
         return self.num_batches
 
 
-class MatchingTestDataLoader:
-    def __init__(self, coupling: IndependentCoupling, batch_size: int, num_batches: int | None = None):
-        pass 
+class MatchingTestLoader(ABC):
+    @abstractmethod
+    def __iter__(self): ...
+
+
+class EmpiricalToEmpiricalTestLoader(MatchingTestLoader):
+    def __init__(self, dataset: EmpiricalToEmpiricalDataset, batch_size: int):
+        super().__init__()
+        self.x0 = dataset.mu0.samples 
+        self.x1 = dataset.mu1.samples 
+        assert self.x0.ndim == 2
+        assert self.x0.shape == self.x1.shape
+        self.batch_size = batch_size
+
+        num_batches, last = divmod(self.x0, batch_size)
+        self.num_batches = num_batches + int(last > 0)
 
     def __iter__(self):
-        # TODO 
-        # 1. Non-empirical to non-empirical
+        # TODO Could actually call the __iter__ method from pytorch's dataloader
+        yield from zip(
+            torch.chunk(self.x0, self.batch_size), 
+            torch.chunk(self.x1, self.batch_size),
+        )
+
+    def __len__(self) -> int:
+        return self.num_batches
 
 
-        # 2. Non-empirical to empirical 
+class AnalyticToAnalyticTestLoader(MatchingTestLoader):
+    def __init__(self, dataset: AnalyticToAnalyticDataset, batch_size: int, num_batches: int):
+        super().__init__()
+        self.mu0 = dataset.mu0
+        self.mu1 = dataset.mu1 
+        self.batch_size = batch_size
+        self.num_batches = num_batches
+    
+    def __iter__(self):
+        for _ in range(len(self)):
+            yield self.mu0.sample((self.num_batches, )), self.mu1.sample((self.num_batches, ))
 
-        # 3. Empirical to empirical 
-        pass 
+    def __len__(self) -> int:
+        return self.num_batches
 
 
 # Brain signals utils
