@@ -1,31 +1,14 @@
 import os
+from torch_ema import ExponentialMovingAverage
 from dataclasses import dataclass
 from typing import Optional
-
-from everything import StandardFrame
-from sklearn.model_selection import KFold
+from everything import SDESolver
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import torch
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 
-from topofm import (
-    HeatBMTSDE,
-    SpectralFrame,
-    OTBatchSampler,
-    make_ot_solver,
-    make_sde_solver,
-    make_time_sampler,
-    make_optimizer,
-    make_ema,
-    make_objective,
-    fit,
-    GCN,
-    ResidualNN,
-    load_brain_data, 
-    load_brain_laplacian, 
-    MatchingTensorDataset,
-    MatchingDataLoader,
-)
+from topofm import *
 
 
 def _build_model(cfg: DictConfig, data_dim: int, laplacian: Optional[torch.Tensor] = None) -> torch.nn.Module:
@@ -60,42 +43,162 @@ def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
     frame = _build_frame(cfg)
     if cfg.data.name == "brain":
         x0, x1 = load_brain_data() # TODO pass option to retrieve the training split
-        return MatchingTensorDataset(x0, x1, frame=frame)
+        mu0, mu1 = Empirical(x0), Empirical(x1)
+        mu0, mu1 = InFrame(mu0, frame), InFrame(mu1, frame)
+        return MatchingDataset(mu0, mu1)
     raise ValueError(f"Unknown dataset: {cfg.data.name}")
 
 
-def run_full(
+def _build_sde_solver(cfg: DictConfig, sde: SDE) -> SDESolver:
+    if cfg.solver.name == 'euler_maruyama':
+        return EulerMaruyamaSolver(sde=sde, time_steps=cfg.solver.time_steps)
+    else:
+        raise NotImplementedError
 
+
+def _build_optimizer(cfg: DictConfig, model: torch.nn.Module) -> torch.optim.Optimizer:
+    if cfg.optimizer.name == 'adamw':
+        return torch.optim.AdamW(params=model.parameters(), lr=cfg.optimizer.lr)
+
+
+def _build_ema(cfg: DictConfig, model: torch.nn.Module) -> ExponentialMovingAverage:
+    return ExponentialMovingAverage(parameters=model.parameters(), decay=cfg.ema.decay)
+
+
+def _build_objective(cfg: DictConfig):
+    return torch.nn.MSELoss()
+
+
+def _build_ot_solver(cfg: DictConfig, sde: SDE) -> OTSolver:
+    return OTSolver(sde=sde, normalize_variance=cfg.ot_solver.normalize_variance)
+
+
+def _build_time_sampler(cfg: DictConfig) -> TimeSampler:
+    if cfg.time_sampler.name == 'uniform':
+        return UniformTimeSampler()
+    if cfg.time_sampler.name == 'discrete':
+        time_steps = UniformTimeSteps(n=cfg.time_sampler.num_steps, t0=cfg.time_sampler.t0)
+        return DiscreteTimeSampler(time_steps=time_steps)
+    raise NotImplementedError
+
+
+def _build_coupling(cfg: DictConfig, dataset: MatchingDataset, sde: SDE) -> Coupling:
+    mu0, mu1 = dataset.mu0, dataset.mu1
+    if cfg.coupling.name == 'independent':
+        return IndependentCoupling(mu0, mu1)
+    if cfg.coupling.name == 'ot':
+        ot_solver = _build_ot_solver(cfg, sde=sde)
+        return OTCoupling(mu0, mu1, ot_solver=ot_solver)
+    if cfg.coupling.name == 'online_ot':
+        ot_solver = _build_ot_solver(cfg, sde=sde)
+        return OnlineOTCoupling(mu0, mu1, ot_solver=ot_solver)
+
+
+def _build_train_data_loader(cfg: DictConfig, dataset: MatchingDataset, sde: SDE) -> MatchingDataLoader:
+    if cfg.data.task == 'matching':
+        coupling = _build_coupling(cfg, dataset=dataset, sde=sde)
+        return MatchingDataLoader(
+            coupling=coupling, 
+            batch_size=cfg.train.batch_size, 
+            num_batches=cfg.train.num_batches, # TODO set this in dataset config
+        )
+    raise NotImplementedError
+
+
+def _build_eval_data_loader(cfg: DictConfig, dataset: MatchingDataset) -> DataLoader:
+    if cfg.data.task == 'matching':
+        dataset = to_tensor_dataset(dataset) # TODO Implement either in data or in utils. 
+        return DataLoader(
+            dataset=dataset, 
+            batch_size=cfg.train.batch_size,
+            shuffle=False, # No need to shuffle validation data
+        )
+    if cfg.data.task == 'generation':
+        raise NotImplementedError 
+    raise ValueError
+
+
+def _build_test_data_loader(cfg: DictConfig, dataset: MatchingDataset) -> DataLoader:
+    if cfg.data.task == 'matching':
+        dataset = to_tensor_dataset(dataset)
+        return DataLoader(
+            dataset=dataset, 
+            batch_size=cfg.train.batch_size, 
+            shuffle=False, # No need to shuffle test data 
+        )
+    if cfg.data.task == 'generation':
+        raise NotImplementedError
+    raise ValueError
+
+
+def run_test(
+    cfg: DictConfig, 
+    frame: Frame, 
+    train_dataset: MatchingDataset, 
+    test_dataset: MatchingDataset, 
+    sde: SDE, 
 ) -> torch.nn.Module:
-    pass
+    model = _build_model(cfg, ...)
+    sde_solver = _build_sde_solver(cfg, sde=sde)
+    optimizer = _build_optimizer(cfg, model=model)
+    ema = _build_ema(cfg, model=model)
+    objective = _build_objective(cfg)
+
+    train_dataset, eval_dataset = train_dataset.train_test_split(cfg.train.eval_size)
+
+    train_data_loader = _build_train_data_loader(cfg, dataset=train_dataset, sde=sde)
+    eval_data_loader = _build_eval_data_loader(cfg, dataset=eval_dataset)
+    test_data_loader = _build_test_data_loader(cfg, dataset=test_dataset)
+    time_sampler = _build_time_sampler(cfg)
+
+    history = fit(
+        sde=sde, 
+        model=model, 
+        train_data_loader=train_data_loader,
+        eval_data_loader=eval_data_loader,
+        time_sampler=time_sampler,
+        num_epochs=cfg.train.num_epochs,
+        sde_solver=sde_solver, 
+        optimizer=optimizer,
+        ema=ema,
+        objective=objective,
+    )
+
+    test_metrics = ... 
+
+    # Save test metrics as csv 
+
+    # Save predictions as image 
+    predictions = ... 
+
+    return 
 
 
 def run_validation(
     cfg: DictConfig,
     *, 
-    dataset: MatchingTensorDataset, 
+    dataset: MatchingDataset, 
 
 ) -> torch.nn.Module:
-    assert cfg.data.type == 'tensor', "Only tensor datasets are foldable."
+
+    model = 
     metric_name = cfg.mode.validation.metric
     model = _build_model(cfg, ...)
     early_stopping = cfg.trainer.early_stopping 
     wnb_logger = ...
   
-    validation_
-    for fold, ds in k_fold_split(dataset):
-        ds_train, ds_eval = train_test_split(ds)
+    for ds in dataset.chunk(k):
+        ds_train, ds_eval = ds.train_test_split(eval_size)
         history = fit(...)
         # evaluate the model 
+    return 
 
-
-    cv_metric = float(sum(fold_metrics) / len(fold_metrics))
-    return {"cv_metric": cv_metric, "fold_metrics": fold_metrics, "histories": histories}
 
 
 @hydra.main(config_path="../../../configs", config_name="config", version_base="1.3")
 def main(cfg: DictConfig) -> None:
     assert cfg.data.type == 'tensor', "Currently only tensor datasets are supported."
+    assert cfg.data.task == 'matching', "Currently only matching tasks are support."
 
     # Prelimiaries 
     torch.manual_seed(cfg.run.seed)
@@ -105,12 +208,13 @@ def main(cfg: DictConfig) -> None:
     # Common terms of full and cross-validation runs 
     frame = _build_frame(cfg)
     dataset = _build_dataset(cfg, frame=frame)
+    dataset_train, dataset_test = dataset.train_test_split(test_size)
     sde = _build_sde(cfg, frame.eigenvalues)
 
     if cfg.train.validation is False: # TODO Maybe instead have cfg.train.mode == 'validation' and then a separate config for that mode 
         run_validation(cfg, dataset=dataset, sde=sde)
     else:
-        run_full(cfg, ...)
+        run_test(cfg, ...)
 
     # TODO 
 

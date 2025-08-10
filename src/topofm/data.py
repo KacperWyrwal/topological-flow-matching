@@ -1,15 +1,16 @@
 from abc import ABC, abstractmethod
+from ast import Index
 import os
-from typing import Tuple
 
-import numpy as np
 import pandas as pd
 import scipy
+from torch._C import K
+from topofm.distributions import Empirical, DistributionInFrame
+from torch.distributions import Distribution
+from torch.utils.data import DataLoader
 import torch
 
-from .frames import Frame, StandardFrame
-from .ot import OTSolver
-from .utils import joint_multinomial
+from .coupling import Coupling
 from .time import TimeSteps
 
 
@@ -39,102 +40,124 @@ class DiscreteTimeSampler(TimeSampler):
         return self.time_steps.t[indices]
 
 
+def _train_test_split_index(n: int, test_size: float) -> tuple[torch.Tensor, torch.Tensor]:
+    num_test = int(n * test_size)
+    idx = torch.randperm(n)
+    return idx[:-num_test], idx[-num_test:]
+
+
+def _chunk_index(n: int, k: int) -> list[torch.Tensor]:
+    idx = torch.randperm(n)
+    return idx.chunk(k)
+
+
 class MatchingDataset(torch.utils.data.Dataset):
-    def __init__(self, *, frame: Frame | None = None) -> None:
+    def __init__(self, mu0: Distribution, mu1: Distribution) -> None:
         super().__init__()
-        self.frame = frame if frame is not None else StandardFrame()
+        self.mu0 = mu0 
+        self.mu1 = mu1 
 
-    def sample(self, shape: torch.Size) -> Tuple[torch.Tensor, torch.Tensor]:
-        raise NotImplementedError
+    def sample(self, shape: torch.Size) -> tuple[torch.Tensor, torch.Tensor]:
+        assert len(shape) <= 1, "Sample shape should be (S,) or ()."
+        return self.mu0.sample(shape), self.mu1.sample(shape)
 
+    @property 
+    def target_is_empirical(self) -> bool:
+        return isinstance(self.mu1.base, Empirical)
+    
+    @property 
+    def source_is_empirical(self) -> bool:
+        return isinstance(self.mu0.base, Empirical)
 
-class MatchingTensorDataset(MatchingDataset):
-    def __init__(self, x0: torch.Tensor, x1: torch.Tensor, *, frame: Frame | None = None) -> None:
-        super().__init__(frame=frame)
-        self.x0, self.x1 = frame.transform(x0, x1)
+    @abstractmethod
+    def train_test_split(self, test_size: float = 0.2): ... 
 
-    def sample(self, shape: torch.Size) -> Tuple[torch.Tensor, torch.Tensor]:
-        assert len(shape) <= 1
-        idx_x0 = torch.randint(0, self.x0.shape[-2] - 1, shape)
-        idx_x1 = torch.randint(0, self.x1.shape[-2] - 1, shape)
-        return self.x0[idx_x0], self.x1[idx_x1]
-
-
-class MatchingDistributionDataset(MatchingDataset):
-    def __init__(
-        self,
-        x0_distribution: torch.distributions.Distribution,
-        x1_distribution: torch.distributions.Distribution,
-        *,
-        frame: Frame | None = None,
-    ) -> None:
-        super().__init__(frame=frame)
-        self.x0_distribution = x0_distribution
-        self.x1_distribution = x1_distribution
-
-    def sample(self, shape: torch.Size) -> Tuple[torch.Tensor, torch.Tensor]:
-        x0 = self.x0_distribution.sample(shape)
-        x1 = self.x1_distribution.sample(shape)
-        x0, x1 = self.frame.transform(x0, x1)
-        return x0, x1
+    @abstractmethod
+    def chunk(self, k: int): ...
 
 
-class OTBatchSampler(torch.utils.data.Sampler):
-    def __init__(self, dataset: MatchingDataset, ot_solver: OTSolver, batch_size: int, num_batches: int, *, batchwise_ot: bool = False):
-        super().__init__()
-        self.dataset = dataset
-        self.batchwise_ot = batchwise_ot
-        self.ot_solver = ot_solver
+class AnalyticToAnalyticDataset(MatchingDataset):
+    def train_test_split(self, test_size: float = 0.2):
+        return self, self
+
+    def chunk(self, k: int):
+        return [self] * k
+
+
+class AnalyticToEmpiricalDataset(MatchingDataset):
+    def train_test_split(self, test_size: float = 0.2):
+        n = self.mu1.num_samples
+        train_idx, test_idx = _train_test_split_index(n, test_size)
+        mu1_train = self.mu1[train_idx]
+        mu1_test = self.mu1[test_idx]
+        return AnalyticToEmpiricalDataset(self.mu0, mu1_train), AnalyticToEmpiricalDataset(self.mu0, mu1_test)
+
+    def chunk(self, k: int):
+        n = self.mu1.num_samples
+        return [AnalyticToEmpiricalDataset(self.mu0, self.mu1[idx]) for idx in _chunk_index(n=n, k=k)]
+
+
+class EmpiricalToAnalyticDataset(MatchingDataset):
+    def train_test_split(self, test_size: float = 0.2):
+        n = self.mu0.num_samples
+        train_idx, test_idx = _train_test_split_index(n, test_size)
+        mu0_train = self.mu0[train_idx]
+        mu0_test = self.mu0[test_idx]
+        return EmpiricalToAnalyticDataset(mu0_train, self.mu1), EmpiricalToAnalyticDataset(mu0_test, self.mu1)
+
+    def chunk(self, k: int):
+        n = self.mu0.num_samples
+        return [EmpiricalToAnalyticDataset(self.mu0[idx], self.mu1) for idx in _chunk_index(n=n, k=k)]
+
+
+class EmpiricalToEmpiricalDataset(MatchingDataset):
+    def train_test_split(self, test_size: float = 0.2):
+        n0 = self.mu0.num_samples
+        n1 = self.mu1.num_samples
+        assert n0 == n1, "Source and target must have same number of samples"
+        n = n0
+        train_idx, test_idx = _train_test_split_index(n, test_size)
+        mu0_train = self.mu0[train_idx]
+        mu1_train = self.mu1[train_idx]
+        mu0_test = self.mu0[test_idx]
+        mu1_test = self.mu1[test_idx]
+        return EmpiricalToEmpiricalDataset(mu0_train, mu1_train), EmpiricalToEmpiricalDataset(mu0_test, mu1_test)
+
+    def chunk(self, k: int):
+        n0 = self.mu0.num_samples
+        n1 = self.mu1.num_samples
+        assert n0 == n1, "Source and target must have same number of samples"
+        n = n0
+        return [EmpiricalToEmpiricalDataset(self.mu0[idx], self.mu1[idx]) for idx in _chunk_index(n=n, k=k)]
+
+
+class MatchingTrainDataLoader:
+    def __init__(self, coupling: Coupling, batch_size: int, num_batches: int) -> None:
+        self.coupling = coupling
         self.batch_size = batch_size
         self.num_batches = num_batches
-        self.ot_plan = None
-        if isinstance(dataset, MatchingDistributionDataset):
-            self.batchwise_ot = True
-
-    def _get_ot_plan(self, x0: torch.Tensor, x1: torch.Tensor) -> torch.Tensor:
-        if self.batchwise_ot is True or self.ot_plan is None:
-            ot_plan = self.ot_solver.solve(x0, x1)
-        else:
-            ot_plan = self.ot_plan
-        return ot_plan
-
-    def _resample_from_ot_plan(self, x0: torch.Tensor, x1: torch.Tensor):
-        x0_idx, x1_idx = joint_multinomial(self._get_ot_plan(x0, x1), num_samples=self.batch_size)
-        return x0[x0_idx], x1[x1_idx]
-
-    def _sample_batch(self):
-        if self.batchwise_ot is False:
-            x0, x1 = self.dataset.x0, self.dataset.x1
-        else:
-            x0, x1 = self.dataset.sample((self.batch_size,))
-        return self._resample_from_ot_plan(x0, x1)
 
     def __iter__(self):
-        for _ in range(len(self)):
-            yield self._sample_batch()
+        for _ in range(self.num_batches):
+            yield self.coupling.sample((self.batch_size,))
 
     def __len__(self) -> int:
         return self.num_batches
 
 
-class MatchingDataLoader:
-    def __init__(self, dataset: MatchingDataset, batch_sampler: OTBatchSampler):
-        self.dataset = dataset
-        self.batch_sampler = batch_sampler
+class MatchingTestDataLoader:
+    def __init__(self, coupling: IndependentCoupling, batch_size: int, num_batches: int | None = None):
+        pass 
 
     def __iter__(self):
-        yield from self.batch_sampler
+        # TODO 
+        # 1. Non-empirical to non-empirical
 
-    def __len__(self) -> int:
-        return self.batch_sampler.batch_size * self.batch_sampler.num_batches
 
-    @property
-    def batch_size(self) -> int:
-        return self.batch_sampler.batch_size
+        # 2. Non-empirical to empirical 
 
-    @property
-    def num_batches(self) -> int:
-        return len(self) // self.batch_size
+        # 3. Empirical to empirical 
+        pass 
 
 
 # Brain signals utils

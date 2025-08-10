@@ -19,7 +19,13 @@ from .utils import (
     joint_multinomial,
     as_tensors,
 )
-from .distributions import Moons, EightGaussians, PossiblyDegenerateNormal
+from .distributions import (
+    Moons, 
+    EightGaussians, 
+    PossiblyDegenerateNormal, 
+    Empirical,
+    InFrame,
+)
 from .frames import Frame, SpectralFrame, StandardFrame
 from .time import TimeSteps, UniformTimeSteps
 from .sde import (
@@ -80,6 +86,13 @@ from .training import (
 )
 from .plotting import plot_trajectory, plot_samples, plot_history
 
+from .coupling import (
+    Coupling,
+    IndependentCoupling, 
+    OTCoupling, 
+    OnlineOTCoupling,
+)
+
 __all__ = [
     # utils
     "sample_moons",
@@ -126,6 +139,7 @@ __all__ = [
     "MatchingDistributionDataset",
     "OTBatchSampler",
     "MatchingDataLoader",
+    "load_brain_data",
     # models
     "timestep_embedding",
     "FCs",
@@ -157,6 +171,11 @@ __all__ = [
     "plot_trajectory",
     "plot_samples",
     "plot_history",
+    # coupling
+    "Coupling", 
+    "IndependentCoupling",
+    "OTCoupling",
+    "OnlineOTCoupling"
 ]
 
 

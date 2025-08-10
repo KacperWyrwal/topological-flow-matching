@@ -1,7 +1,10 @@
+import math
 import torch
+from torch.distributions import Distribution
+from topofm import Frame, StandardFrame
 
 
-class Moons(torch.distributions.Distribution):
+class Moons(Distribution):
     """A PyTorch Distribution representing the two moons dataset."""
 
     def __init__(self, noise_std: float = 0.05) -> None:
@@ -14,7 +17,7 @@ class Moons(torch.distributions.Distribution):
         return sample_moons(shape, noise_std=self.noise_std)
 
 
-class EightGaussians(torch.distributions.Distribution):
+class EightGaussians(Distribution):
     """A PyTorch Distribution representing eight Gaussians on a circle."""
 
     def __init__(self, radius: float = 2.0, noise_std: float = 0.2) -> None:
@@ -60,4 +63,74 @@ class PossiblyDegenerateNormal(torch.distributions.Normal):
         icdf_if_degenerate = self.loc
         return torch.where(self.is_degenerate, icdf_if_degenerate, icdf_if_nondegenerate)
 
+
+class Empirical(Distribution):
+    """Empirical distribution defined by a finite set of samples (with replacement).
+
+    Samples are drawn by indexing the stored tensor along the first dimension.
+
+    Args:
+        samples: Tensor of shape (N, *event_shape)
+    """
+
+    def __init__(self, samples: torch.Tensor, validate_args: bool | None = None) -> None:
+        super().__init__(validate_args=validate_args)
+        assert samples.ndim == 2, "`samples` should be of shape [N, D]"
+        self._samples = samples
+        self._batch_shape = torch.Size()
+        self._event_shape = torch.Size([samples.shape[-1]])
+
+    @property
+    def samples(self) -> torch.Tensor:
+        return self._samples
+
+    @property 
+    def num_samples(self) -> int:
+        return self.samples.shape[0]
+
+    @property
+    def batch_shape(self) -> torch.Size:
+        return self._batch_shape
+
+    @property
+    def event_shape(self) -> torch.Size:
+        return self._event_shape
+
+    def sample(self, shape: torch.Size) -> torch.Tensor:
+        assert len(shape) <= 1, "Sample shape should be (S,) or ()."
+        indices = torch.randint(0, self.num_samples, shape, device=self.samples.device)
+        return self.samples[indices]
+
+    def __getitem__(self, idx) -> "Empirical":
+        return Empirical(samples=self.samples[idx])
+
+
+class InFrame(Distribution):
+    def __init__(self, base: Distribution, frame: Frame | None = None) -> None:
+        assert not isinstance(base, InFrame), "Wrapping InFrame in InFrame is likely not the indended usage."
+
+        super().__init__(validate_args=False)
+        self.frame = StandardFrame() if frame is None else frame
+
+        if isinstance(base, Empirical):
+            self.base = Empirical(samples=self.frame.transform(base.samples))
+            self.precomputed = True 
+        else:
+            self.base = base 
+            self.precomputed = False
+    
+    def sample(self, shape: torch.Size) -> torch.Tensor:
+        x = self.base.sample(shape)
+        if self.precomputed is True:
+            return x
+        else:
+            return self.frame.transform(x)
+
+    def __getitem__(self, idx) -> "InFrame":
+        return InFrame(base=self.base[idx], frame=self.frame)
+
+    @property
+    def num_samples(self) -> torch.Size:
+        assert isinstance(self.base, Empirical), "num_samples only available for an Empirical base"
+        return self.base.num_samples
 
