@@ -1,8 +1,11 @@
+import os 
 from torch_ema import ExponentialMovingAverage
-from typing import Optional
 import hydra
 from omegaconf import DictConfig
 import torch
+from matplotlib import pyplot as plt
+import wandb
+from omegaconf import OmegaConf
 
 # Fix circular imports by using specific imports
 from ..data import (
@@ -58,6 +61,16 @@ from ..time import (
 from ..training import (
     fit, 
     evaluate,
+    EarlyStopping,
+)
+
+from ..control import (
+    ModelControl, 
+)
+
+from ..plotting import (
+    plot_2d_predictions,
+    plot_history,
 )
 
 
@@ -69,9 +82,43 @@ def _get_dtype(cfg: DictConfig) -> torch.dtype:
     return dtype_map[cfg.run.dtype]
 
 
+def _setup_wandb(cfg: DictConfig):
+    """Setup W&B logging if enabled."""
+    if not cfg.run.use_wandb:
+        return None
+    
+    # Generate run name if not specified
+    run_name = cfg.run.wandb.run_name
+    if run_name is None:
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        sde_is_topological = cfg.sde.c != 0.0 # TODO have a better method for this
+        run_name = f"{cfg.data.name}_{cfg.model.name}_{sde_is_topological}_{cfg.run.mode}_{timestamp}"
+    
+    wandb.init(
+        project=cfg.run.wandb.project,
+        name=run_name,
+        config=OmegaConf.to_container(cfg, resolve=True),
+        tags=cfg.run.wandb.tags,
+        entity=cfg.run.wandb.entity,
+    )
+    return wandb.run
+
+
 def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
     if cfg.data.name == 'brain':
         return load_brain_laplacian()
+    if cfg.data.name == 'gaussians_to_moons':
+        if cfg.data.laplacian == 'fully_connected':
+            A = torch.tensor([
+                [0.0, 1.0], 
+                [1.0, 0.0]
+            ])
+            D = torch.diag_embed(torch.sum(A, dim=-1))
+            L = D - A
+            return L
+        else:
+            raise ValueError(f"Unsupported Laplacian type {cfg.data.laplacian} for dataset {cfg.data.name}")
     raise ValueError(f"Unsupported tensor dataset name: {cfg.data.name}")
 
 
@@ -193,6 +240,17 @@ def _build_objective(cfg: DictConfig):
     raise ValueError(f"Unsupported objective {cfg.train.objective.name}.")
 
 
+def _build_early_stopping(cfg: DictConfig) -> EarlyStopping | None:
+    if not cfg.train.early_stopping.enabled:
+        return None
+    return EarlyStopping(
+        patience=cfg.train.early_stopping.patience,
+        metric_name=cfg.train.early_stopping.metric_name,
+        min_delta=cfg.train.early_stopping.min_delta,
+        mode=cfg.train.early_stopping.mode,
+    )
+
+
 def _build_ot_solver(cfg: DictConfig, sde: SDE) -> OTSolver:
     return OTSolver(sde=sde, normalize_variance=cfg.ot.normalize_variance)
 
@@ -286,6 +344,47 @@ def _build_eval_data_loader(cfg: DictConfig, dataset: MatchingDataset) -> Matchi
     raise ValueError
 
 
+@torch.inference_mode()
+def _plot_predictions(cfg: DictConfig, model: torch.nn.Module, sde_solver: SDESolver, dataset: MatchingDataset, frame: Frame, wandb_run = None) -> None:
+    if cfg.data.name == 'brain':
+        pass 
+    if cfg.data.name == 'gaussians_to_moons':
+        # Predict 
+        control = ModelControl(model)
+        x0, x1 = dataset.sample((cfg.plot.predictions.num_samples, )) # TODO add to config 
+        xt, t = sde_solver.sample_path(x0=x0, control=control)
+        x0, x1, xt = frame.inverse_transform(x0, x1, xt)
+
+        # Plot
+        fig, ax = plot_2d_predictions(t=t, xt=xt, x0=x0, x1=x1)
+
+        # Save 
+        full_name = cfg.plot.predictions.name + ".png"
+        full_path = os.path.join(cfg.plot.predictions.dir, full_name)
+        os.makedirs(cfg.plot.predictions.dir, exist_ok=True)
+        fig.savefig(full_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        
+        # Log to W&B if enabled
+        if cfg.plot.predictions.log_to_wandb and wandb_run is not None:
+            wandb_run.log({"predictions": wandb.Image(str(full_path))})
+        return
+    raise ValueError(f"Dataset {cfg.data.name} not supported.") 
+
+
+def _plot_history(cfg: DictConfig, history: dict[str, list[float]], wandb_run = None) -> None:
+    fig, ax = plot_history(history)
+    full_name = cfg.plot.history.name + ".png"
+    full_path = os.path.join(cfg.plot.history.dir, full_name)
+    os.makedirs(cfg.plot.history.dir, exist_ok=True)
+    fig.savefig(full_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    
+    # Log to W&B if enabled
+    if cfg.plot.history.log_to_wandb and wandb_run is not None:
+        wandb_run.log({"training_history": wandb.Image(str(full_path))})
+    return 
+
 
 def run_test(
     cfg: DictConfig, 
@@ -332,6 +431,20 @@ def run_test(
     time_sampler = _build_time_sampler(cfg)
     print(f"✅ Time sampler built: {type(time_sampler).__name__}")
 
+    print("🛑 Building early stopping...")
+    early_stopping = _build_early_stopping(cfg)
+    if early_stopping is not None:
+        print(f"✅ Early stopping enabled: patience={early_stopping.patience}, metric={early_stopping.metric_name}, min_delta={early_stopping.min_delta}")
+    else:
+        print("ℹ️ Early stopping disabled")
+
+    print("🔗 Setting up W&B...")
+    wandb_run = _setup_wandb(cfg)
+    if wandb_run:
+        print(f"✅ W&B logging enabled: {wandb_run.name}")
+    else:
+        print("ℹ️ W&B logging disabled")
+
     print("🚀 Starting training...")
     print(f"📊 Training config: epochs={cfg.train.num_epochs}, batch_size={cfg.train.batch_size}")
     history = fit(
@@ -345,8 +458,18 @@ def run_test(
         optimizer=optimizer,
         ema=ema,
         objective=objective,
+        early_stopping=early_stopping,
+        use_wandb=cfg.run.use_wandb,
+        wandb_run=wandb_run,
     )
     print("✅ Training completed!")
+
+    if cfg.plot.history.enabled:
+        print("📊 Plotting training history...")
+        _plot_history(cfg, history, wandb_run)
+        print("✅ Training history plotted!")
+    else:
+        print("ℹ️ Not plotting training history (disabled in config).")
 
     print("🧪 Starting evaluation...")
     test_metrics = evaluate(
@@ -356,10 +479,26 @@ def run_test(
         ema=ema,
     ) 
     print("✅ Evaluation completed!")
-
-    # TODO Add Plotting and saving to WnB
     print("📊 Test metrics:")
     print(test_metrics)
+
+    if cfg.plot.predictions.enabled:
+        print("📊 Plotting predictions...")
+        _plot_predictions(cfg, model=model, sde_solver=sde_solver, dataset=test_dataset, frame=frame, wandb_run=wandb_run)
+        print("✅ Predictions plotted!")
+    else:
+        print("ℹ️ Not plotting predictions (disabled in config).")
+
+    # Final W&B logging and cleanup
+    if wandb_run is not None:
+        print("🔗 Logging final metrics to W&B...")
+        # Log test metrics as individual scalars for proper visualization
+        wandb_run.log({
+            "test/W1": test_metrics["W1"],
+            "test/W2": test_metrics["W2"],
+        })
+        wandb_run.finish()
+        print("✅ W&B logging completed!")
 
 
 def run_validation() -> None:

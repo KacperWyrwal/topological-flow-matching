@@ -1,10 +1,13 @@
 defaults:
-  - data: brain 
+  - data: gaussians_to_moons 
   - experiments: default
   - frame: spectral
   - hydra: default 
   - model: residual_nn
   - ot: default
+  - plot: default
+  - plot/history: default
+  - plot/predictions: default
   - run: default 
   - sde: heat_bm 
   - sde_solver: euler_maruyama 
@@ -15,6 +18,7 @@ defaults:
   - train/ema: default
   - train/coupling: online_ot
   - train/objective: default
+  - train/early_stopping: default
   - train/time_sampler: discrete
   - validation: default
   - _self_

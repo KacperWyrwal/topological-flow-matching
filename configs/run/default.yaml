@@ -2,5 +2,9 @@ seed: 0
 device: cpu
 dtype: float64
 use_wandb: false
-wandb_project: topofm
 mode: test
+wandb:
+  project: "topological-flow-matching"
+  run_name: null  # auto-generated if null
+  tags: []
+  entity: shil6408-university-of-oxford  # your username/team

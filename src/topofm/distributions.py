@@ -10,6 +10,16 @@ class Moons(Distribution):
     def __init__(self, noise_std: float = 0.05) -> None:
         super().__init__(validate_args=False)
         self.noise_std = noise_std
+        self._batch_shape = torch.Size()
+        self._event_shape = torch.Size([2])
+
+    @property
+    def batch_shape(self) -> torch.Size:
+        return self._batch_shape
+
+    @property
+    def event_shape(self) -> torch.Size:
+        return self._event_shape
 
     def sample(self, shape) -> torch.Tensor:
         from .utils import sample_moons
@@ -24,6 +34,16 @@ class EightGaussians(Distribution):
         super().__init__(validate_args=False)
         self.radius = radius
         self.noise_std = noise_std
+        self._batch_shape = torch.Size()
+        self._event_shape = torch.Size([2])
+
+    @property
+    def batch_shape(self) -> torch.Size:
+        return self._batch_shape
+
+    @property
+    def event_shape(self) -> torch.Size:
+        return self._event_shape
 
     def sample(self, shape) -> torch.Tensor:
         from .utils import sample_eight_gaussians

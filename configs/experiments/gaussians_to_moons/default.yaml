@@ -11,3 +11,19 @@ model:
 
 # Override coupling configuration
 train/coupling: online_ot
+
+# Enable early stopping for this experiment
+train/early_stopping:
+  enabled: true
+  patience: 5
+  metric_name: "W1"
+  min_delta: 0.05
+  mode: "min"
+
+# Enable W&B logging for this experiment
+run:
+  use_wandb: true
+  wandb:
+    project: "topological-flow-matching"
+    run_name: "gaussians_to_moons_experiment"
+    tags: ["gaussians-to-moons", "early-stopping"]

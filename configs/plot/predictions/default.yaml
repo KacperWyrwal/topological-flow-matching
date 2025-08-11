@@ -1,0 +1,5 @@
+enabled: true
+dir: ${plot.output_dir}
+name: predictions
+log_to_wandb: true
+num_samples: 1000

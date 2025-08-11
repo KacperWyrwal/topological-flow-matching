@@ -25,6 +25,8 @@ from .distributions import (
     PossiblyDegenerateNormal, 
     Empirical,
     InFrame,
+    EmpiricalInFrame, 
+    AnalyticInFrame,
 )
 from .frames import (
     Frame, 
@@ -84,7 +86,12 @@ from .training import (
     evaluate,
     fit,
 )
-from .plotting import plot_trajectory, plot_samples, plot_history
+from .plotting import (
+    plot_trajectory, 
+    plot_samples, 
+    plot_2d_predictions,
+    plot_history,
+)
 
 from .coupling import (
     Coupling,
@@ -93,7 +100,9 @@ from .coupling import (
     OnlineOTCoupling,
 )
 
+
 __all__ = [
+    "__version__",
     # utils
     "sample_moons",
     "sample_eight_gaussians",
@@ -101,12 +110,14 @@ __all__ = [
     "torch_divmod",
     "joint_multinomial",
     "as_tensors",
-    # dists
+    # distributions
     "Moons",
     "EightGaussians",
     "PossiblyDegenerateNormal",
-    "Empirical", 
+    "Empirical",
     "InFrame",
+    "EmpiricalInFrame", 
+    "AnalyticInFrame",
     # frames
     "Frame",
     "SpectralFrame",
@@ -126,7 +137,7 @@ __all__ = [
     "BridgeControl",
     "ModelControl",
     "bridge_control",
-    # solvers
+    # sde_solvers
     "SDESolver",
     "EulerMaruyamaSolver",
     # ot
@@ -137,10 +148,6 @@ __all__ = [
     "UniformTimeSampler",
     "DiscreteTimeSampler",
     "MatchingDataset",
-    "MatchingTensorDataset",
-    "MatchingDistributionDataset",
-    "OTBatchSampler",
-    "MatchingDataLoader",
     "load_brain_data",
     # models
     "timestep_embedding",
@@ -173,11 +180,12 @@ __all__ = [
     "plot_trajectory",
     "plot_samples",
     "plot_history",
+    "plot_2d_predictions",
     # coupling
-    "Coupling", 
+    "Coupling",
     "IndependentCoupling",
     "OTCoupling",
-    "OnlineOTCoupling"
+    "OnlineOTCoupling",
 ]
 
 

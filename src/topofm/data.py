@@ -177,16 +177,18 @@ class EmpiricalToEmpiricalTestLoader(MatchingTestLoader):
 
 
 class AnalyticToAnalyticTestLoader(MatchingTestLoader):
-    def __init__(self, dataset: AnalyticToAnalyticDataset, batch_size: int, num_batches: int):
+    def __init__(self, dataset: AnalyticToAnalyticDataset, batch_size: int, epoch_size: int):
         super().__init__()
         self.mu0 = dataset.mu0
         self.mu1 = dataset.mu1 
         self.batch_size = batch_size
-        self.num_batches = num_batches
+        self.epoch_size = epoch_size 
+
+        self.num_batches, res = divmod(self.epoch_size, self.batch_size)
     
     def __iter__(self):
         for _ in range(len(self)):
-            yield self.mu0.sample((self.num_batches, )), self.mu1.sample((self.num_batches, ))
+            yield self.mu0.sample((self.batch_size, )), self.mu1.sample((self.batch_size, ))
 
     def __len__(self) -> int:
         return self.num_batches

@@ -1,0 +1,4 @@
+enabled: true
+dir: ${plot.output_dir}
+name: history
+log_to_wandb: true

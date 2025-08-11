@@ -15,7 +15,7 @@ def plot_trajectory(
     cmap_name: str = "coolwarm",
     add_colorbar: bool = True,
 ):
-    assert xt.ndim == 3 and xt.size(-1) == 2
+    assert xt.ndim == 3 and xt.size(-1) == 2, f"xt must be a 3D tensor with shape (N, T, 2), got {xt.shape}"
     xt_np = xt.detach().cpu().numpy()
     t_np = t.detach().cpu().numpy() if isinstance(t, torch.Tensor) else np.asarray(t)
     if t_np.ndim == 2:
@@ -86,26 +86,79 @@ def plot_samples(
     return fig, ax
 
 
-def plot_history(history: dict[str, list[float]]):
-    import pandas as pd
-    fig = go.Figure()
-    df = pd.DataFrame(history)
-    if 'loss' in df.columns:
-        fig.add_trace(go.Scatter(y=df['loss'], x=df.index, mode='lines', name='Loss', line=dict(color='blue', dash='solid'), yaxis='y1'))
-    if 'W1' in df.columns:
-        fig.add_trace(go.Scatter(y=df['W1'], x=df.index, mode='lines', name='W1', line=dict(color='red', dash='dot'), yaxis='y2'))
-    if 'W2' in df.columns:
-        fig.add_trace(go.Scatter(y=df['W2'], x=df.index, mode='lines', name='W2', line=dict(color='green', dash='dash'), yaxis='y2'))
-    fig.update_layout(
-        title="Metrics vs Epoch",
-        xaxis_title="Epoch",
-        yaxis=dict(title="Loss", side="left"),
-        yaxis2=dict(title="Validation Metrics (W1, W2)", overlaying="y", side="right"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="center", x=0.5),
-        template="plotly_white",
-        width=1000,
-        height=500,
-    )
-    return fig
+def plot_history(history: dict[str, list[float]]) -> tuple[plt.Figure, plt.Axes]:
+    """
+    Plot training history using matplotlib.
+
+    Args:
+        history: Dictionary with keys like 'loss', 'W1', 'W2' and values as lists of floats.
+
+    Returns:
+        fig, ax: Matplotlib Figure and Axes objects.
+    """
+    import matplotlib.pyplot as plt
+
+    epochs = range(len(next(iter(history.values())))) if history else []
+    fig, ax1 = plt.subplots(figsize=(12, 6))
+
+    # Plot loss on left y-axis
+    if 'loss' in history:
+        ax1.plot(epochs, history['loss'], label='Loss', color='blue', linestyle='-')
+        ax1.set_ylabel('Loss', color='blue')
+        ax1.tick_params(axis='y', labelcolor='blue')
+    else:
+        ax1.set_ylabel('Loss')
+
+    # Plot W1 and W2 on right y-axis if present
+    ax2 = ax1.twinx()
+    lines = []
+    labels = []
+
+    if 'W1' in history:
+        l1, = ax2.plot(epochs, history['W1'], label='W1', color='red', linestyle=':')
+        lines.append(l1)
+        labels.append('W1')
+    if 'W2' in history:
+        l2, = ax2.plot(epochs, history['W2'], label='W2', color='green', linestyle='--')
+        lines.append(l2)
+        labels.append('W2')
+
+    if 'W1' in history or 'W2' in history:
+        ax2.set_ylabel('Validation Metrics (W1, W2)')
+        ax2.tick_params(axis='y', labelcolor='black')
+
+    # Combine legends
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=3)
+
+    ax1.set_xlabel('Epoch')
+    ax1.set_title('Metrics vs Epoch')
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+
+    return fig, ax1
 
 
+def plot_2d_predictions(
+    t: torch.Tensor,
+    xt: torch.Tensor,
+    x0: torch.Tensor,
+    x1: torch.Tensor
+) -> tuple[plt.Figure, plt.Axes]:
+    """
+    Plot predicted sample paths and endpoints.
+
+    Args:
+        t: Time steps tensor.
+        xt: Trajectory tensor of shape (N, T, 2).
+        x0: Initial samples tensor.
+        x1: Target samples tensor.
+
+    Returns:
+        Tuple of (figure, axes) from matplotlib.
+    """
+    fig, ax = plot_trajectory(xt=xt, t=t)
+    plot_samples(x0, t=0.0, ax=ax)
+    plot_samples(x1, t=1.0, ax=ax)
+    plot_samples(xt[:, -1], color='green', label='predicted', ax=ax)
+    return fig, ax

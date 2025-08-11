@@ -14,7 +14,17 @@ class SDESolver(ABC):
     def pushforward(self, x0: torch.Tensor, *, control: Control | None = None) -> torch.Tensor: ...
 
     @abstractmethod
-    def sample_path(self, x0: torch.Tensor, *, control: Control | None = None) -> tuple[torch.Tensor, torch.Tensor]: ...
+    def sample_path(self, x0: torch.Tensor, *, control: Control | None = None) -> tuple[torch.Tensor, torch.Tensor]: 
+        """
+        Sample a path from the SDE.
+
+        Args:
+            x0: Initial state.
+            control: Control function.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor]: xt, t - path and time steps.
+        """
 
 
 class EulerMaruyamaSolver(SDESolver):
