@@ -2,9 +2,12 @@ from abc import ABC, abstractmethod
 import torch
 from torch.distributions import Distribution
 
-from .distributions import Empirical
+from .distributions import Empirical, EmpiricalInFrame
 from .ot import OTSolver
 from .utils import joint_multinomial
+
+
+EmpiricalLike = Empirical | EmpiricalInFrame
 
 
 class Coupling(ABC):
@@ -23,10 +26,7 @@ class IndependentCoupling(Coupling):
 
 
 class OTCoupling(Coupling):
-    def __init__(self, mu0: Empirical, mu1: Empirical, ot_solver: OTSolver) -> None:
-        assert isinstance(mu0, Empirical) and isinstance(mu1, Empirical), (
-            f"`mu0` and `mu1` must be `Empirical`, got {type(mu0)} and {type(mu1)}."
-        )
+    def __init__(self, mu0: EmpiricalLike, mu1: EmpiricalLike, ot_solver: OTSolver) -> None:
         super().__init__(mu0, mu1)
         self.x0 = mu0.samples
         self.x1 = mu1.samples

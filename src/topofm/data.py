@@ -50,8 +50,9 @@ def _chunk_index(n: int, k: int) -> list[torch.Tensor]:
 class MatchingDataset(torch.utils.data.Dataset):
     def __init__(self, mu0: Distribution, mu1: Distribution) -> None:
         super().__init__()
+        assert mu0.event_shape == mu1.event_shape, f"Need {mu0.event_shape} == {mu1.event_shape}"
         self.mu0 = mu0 
-        self.mu1 = mu1 
+        self.mu1 = mu1
 
     # TODO maybe remove this method 
     def sample(self, shape: torch.Size) -> tuple[torch.Tensor, torch.Tensor]:
@@ -63,6 +64,10 @@ class MatchingDataset(torch.utils.data.Dataset):
 
     @abstractmethod
     def chunk(self, k: int): ...
+
+    @property
+    def dim(self) -> int: # TODO This implementation could be pushed up
+        return self.mu0.event_shape[0]
 
 
 class AnalyticToAnalyticDataset(MatchingDataset):
@@ -87,6 +92,7 @@ class AnalyticToEmpiricalDataset(MatchingDataset):
 
 
 class EmpiricalToAnalyticDataset(MatchingDataset):
+
     def train_test_split(self, test_size: float = 0.2):
         n = self.mu0.num_samples
         train_idx, test_idx = _train_test_split_index(n, test_size)
@@ -100,7 +106,10 @@ class EmpiricalToAnalyticDataset(MatchingDataset):
 
 
 class EmpiricalToEmpiricalDataset(MatchingDataset):
-    def train_test_split(self, test_size: float = 0.2):
+    def train_test_split(
+        self, 
+        test_size: float = 0.2,
+    ) -> tuple["EmpiricalToEmpiricalDataset", "EmpiricalToEmpiricalDataset"]:
         n0 = self.mu0.num_samples
         n1 = self.mu1.num_samples
         assert n0 == n1, "Source and target must have same number of samples"
@@ -121,10 +130,12 @@ class EmpiricalToEmpiricalDataset(MatchingDataset):
 
 
 class MatchingTrainLoader:
-    def __init__(self, coupling: Coupling, batch_size: int, num_batches: int) -> None:
+    def __init__(self, coupling: Coupling, batch_size: int, epoch_size: int) -> None:
         self.coupling = coupling
         self.batch_size = batch_size
-        self.num_batches = num_batches
+        self.epoch_size = epoch_size
+        self.num_batches, res = divmod(epoch_size, self.batch_size)
+        # TODO 
 
     def __iter__(self):
         for _ in range(self.num_batches):
@@ -148,8 +159,11 @@ class EmpiricalToEmpiricalTestLoader(MatchingTestLoader):
         assert self.x0.shape == self.x1.shape
         self.batch_size = batch_size
 
-        num_batches, last = divmod(self.x0, batch_size)
-        self.num_batches = num_batches + int(last > 0)
+        if self.batch_size == -1:
+            self.num_batches = 1
+        else:
+            num_batches, last = divmod(self.x0.shape[0], batch_size)
+            self.num_batches = num_batches + int(last > 0)
 
     def __iter__(self):
         # TODO Could actually call the __iter__ method from pytorch's dataloader

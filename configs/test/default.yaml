@@ -1,3 +1,2 @@
 ratio: 0.2
-batch_size: 512
-epoch_size: 8096
+batch_size: -1

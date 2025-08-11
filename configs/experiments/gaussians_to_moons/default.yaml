@@ -1,0 +1,13 @@
+
+# Override data configuration
+data: gaussians_to_moons
+
+# Override frame configuration (spectral frame works well for this task)
+frame: standard
+
+# Override model configuration for this specific task
+model:
+  name: residual_nn
+
+# Override coupling configuration
+train/coupling: online_ot

@@ -1,6 +1,6 @@
 defaults:
-  - _self_
   - data: brain 
+  - experiments: default
   - frame: spectral
   - hydra: default 
   - model: residual_nn
@@ -11,4 +11,10 @@ defaults:
   - test: default
   - time_sampler: discrete
   - train: default
+  - train/optimizer: adamw
+  - train/ema: default
+  - train/coupling: online_ot
+  - train/objective: default
+  - train/time_sampler: discrete
   - validation: default
+  - _self_
