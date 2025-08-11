@@ -1,8 +1,7 @@
-import math
 import torch
 from abc import abstractmethod
 from torch.distributions import Distribution
-from topofm import Frame, StandardFrame
+from .frames import Frame, StandardFrame
 
 
 class Moons(Distribution):

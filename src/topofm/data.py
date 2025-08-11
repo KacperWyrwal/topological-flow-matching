@@ -1,13 +1,9 @@
 from abc import ABC, abstractmethod
-from ast import Index
 import os
 
 import pandas as pd
 import scipy
-from torch._C import K
-from topofm.distributions import Empirical, DistributionInFrame
 from torch.distributions import Distribution
-from torch.utils.data import DataLoader
 import torch
 
 from .coupling import Coupling
@@ -183,7 +179,8 @@ class AnalyticToAnalyticTestLoader(MatchingTestLoader):
 
 
 # Brain signals utils
-BRAIN_DIR = '../datasets/brain/'
+DATASETS_DIR = "/home/kacperwyrwal/topological-flow-matching/datasets/"
+BRAIN_DIR = os.path.join(DATASETS_DIR, 'brain')
 
 
 def download_brain_regions_centroids(data_dir: str = BRAIN_DIR):

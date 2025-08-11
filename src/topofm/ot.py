@@ -1,5 +1,3 @@
-from collections import defaultdict
-import numpy as np
 import ot
 import torch
 from geomloss import SamplesLoss

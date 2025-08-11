@@ -26,7 +26,11 @@ from .distributions import (
     Empirical,
     InFrame,
 )
-from .frames import Frame, SpectralFrame, StandardFrame
+from .frames import (
+    Frame, 
+    SpectralFrame, 
+    StandardFrame,
+)
 from .time import TimeSteps, UniformTimeSteps
 from .sde import (
     SDE,
@@ -42,17 +46,13 @@ from .control import (
     ModelControl,
     bridge_control,
 )
-from .solvers import SDESolver, EulerMaruyamaSolver
+from .sde_solvers import SDESolver, EulerMaruyamaSolver
 from .ot import OTSolver, wasserstein_distance
 from .data import (
     TimeSampler,
     UniformTimeSampler,
     DiscreteTimeSampler,
     MatchingDataset,
-    MatchingTensorDataset,
-    MatchingDistributionDataset,
-    OTBatchSampler,
-    MatchingDataLoader,
     load_brain_data, 
 )
 from .models import (
@@ -105,6 +105,8 @@ __all__ = [
     "Moons",
     "EightGaussians",
     "PossiblyDegenerateNormal",
+    "Empirical", 
+    "InFrame",
     # frames
     "Frame",
     "SpectralFrame",

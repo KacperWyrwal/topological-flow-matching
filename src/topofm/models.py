@@ -1,6 +1,5 @@
 import math
-from abc import ABC, abstractmethod
-from typing import List
+from abc import abstractmethod
 
 import numpy as np
 import torch

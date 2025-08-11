@@ -1,0 +1,8 @@
+epochs: 100
+batch_size: 512
+epoch_size: 8096
+coupling: ot
+ema: default 
+objective: default
+optimizer: adamw
+time_sampler: discrete

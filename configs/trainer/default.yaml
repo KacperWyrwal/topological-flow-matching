@@ -1,8 +1,0 @@
-epochs: 100
-batch_size: 512
-num_batches: 50
-batchwise_ot: true
-lr: 1.0e-4
-ema_decay: 0.99
-
-

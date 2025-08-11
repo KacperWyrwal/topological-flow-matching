@@ -1,0 +1,2 @@
+name: euler_maruyama
+num_steps: 1000

@@ -1,5 +1,6 @@
 name: gaussians_to_moons
-type: distribution
+task: analytic_to_analytic
+test_size: 0.2
 moons_noise: 0.05
 radius: 2.0
 gaussians_noise: 0.2

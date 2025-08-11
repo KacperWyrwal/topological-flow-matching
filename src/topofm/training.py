@@ -5,10 +5,10 @@ from torch_ema import ExponentialMovingAverage
 
 from .control import ModelControl, bridge_control
 from .ot import OTSolver, wasserstein_distance
-from .solvers import SDESolver, EulerMaruyamaSolver
+from .sde_solvers import SDESolver, EulerMaruyamaSolver
 from .sde import SDE
 from .time import UniformTimeSteps
-from .data import MatchingDataLoader, TimeSampler, DiscreteTimeSampler
+from .data import TimeSampler, DiscreteTimeSampler, MatchingTrainLoader, MatchingTestLoader
 
 
 # Defaults
@@ -50,7 +50,7 @@ def train(
     *,
     sde: SDE,
     model: torch.nn.Module,
-    data_loader: MatchingDataLoader,
+    data_loader: MatchingTrainLoader,
     time_sampler: TimeSampler,
     optimizer: torch.optim.Optimizer,
     ema: ExponentialMovingAverage,
@@ -76,7 +76,7 @@ def evaluate(
     *,
     sde_solver: SDESolver,
     model: torch.nn.Module,
-    data_loader: MatchingDataLoader,
+    data_loader: MatchingTestLoader,
     ema: ExponentialMovingAverage,
 ) -> dict[str, float]:
     control = ModelControl(model)
@@ -94,7 +94,7 @@ def evaluate(
 def fit(
     sde: SDE,
     model: torch.nn.Module,
-    train_data_loader: MatchingDataLoader,
+    train_data_loader: MatchingTrainLoader,
     *,
     num_epochs: int,
     time_sampler: TimeSampler | None = None,
@@ -102,7 +102,7 @@ def fit(
     optimizer: torch.optim.Optimizer | None = None,
     ema: ExponentialMovingAverage | None = None,
     objective: torch.nn.Module | None = None,
-    eval_data_loader: MatchingDataLoader | None = None,
+    eval_data_loader: MatchingTestLoader | None = None,
 ) -> dict[str, torch.Tensor]:
     if optimizer is None:
         optimizer = make_optimizer(model)

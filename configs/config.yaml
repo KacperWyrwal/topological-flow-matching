@@ -1,20 +1,14 @@
 defaults:
   - _self_
+  - data: brain 
+  - frame: spectral
+  - hydra: default 
   - model: residual_nn
-  - sde: heat_bm
-  - data: gaussians_to_moons
-  - trainer: default
-  - solver: default
-  - time_sampler: default
   - ot: default
-  - graph: identity
-  - hydra: default
-
-run:
-  seed: 0
-  device: cpu
-  dtype: float64
-  use_wandb: false
-  wandb_project: topofm
-
-
+  - run: default 
+  - sde: heat_bm 
+  - sde_solver: euler_maruyama 
+  - test: default
+  - time_sampler: discrete
+  - train: default
+  - validation: default

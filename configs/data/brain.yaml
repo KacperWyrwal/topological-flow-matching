@@ -1,2 +1,3 @@
-name: gaussians_to_moons
-type: tensor
+name: brain
+task: empirical_to_empirical
+test_size: 0.2

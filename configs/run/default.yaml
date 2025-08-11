@@ -1,0 +1,6 @@
+seed: 0
+device: cpu
+dtype: float64
+use_wandb: false
+wandb_project: topofm
+mode: test
