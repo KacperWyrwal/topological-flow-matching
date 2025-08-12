@@ -1,0 +1,89 @@
+data:
+  name: brain
+  task: empirical_to_empirical
+  test_size: 0.2
+  dir: datasets/brain
+frame:
+  name: spectral
+model:
+  name: residual_nn
+  hidden_dim: 256
+  time_embed_dim: 128
+  num_res_block: 1
+ot:
+  normalize_variance: false
+plot:
+  output_dir: ${hydra:runtime.output_dir}/plots
+  history:
+    enabled: true
+    dir: ${plot.output_dir}
+    name: history
+    log_to_wandb: true
+  predictions:
+    enabled: false
+    dir: ${plot.output_dir}
+    name: predictions
+    log_to_wandb: true
+    num_samples: 1000
+run:
+  seed: 5
+  device: cuda
+  dtype: float64
+  use_wandb: true
+  mode: test
+  wandb:
+    project: topological-flow-matching
+    run_name: null
+    notes: null
+    job_type: test
+    tags:
+    - brain
+    - topological
+    - ot
+    - test
+    - ${run.seed}
+    entity: shil6408-university-of-oxford
+sde:
+  name: topological_heat_bm
+  c: 2.0
+  sigma: 0.0
+sde_solver:
+  name: euler_maruyama
+  time_steps:
+    name: uniform
+    num_steps: 1000
+    t0: 0.0001
+test:
+  ratio: 0.2
+  batch_size: null
+  epoch_size: null
+time_sampler:
+  name: discrete
+  num_steps: 1000
+train:
+  num_epochs: 100
+  batch_size: 512
+  epoch_size: 25600
+  optimizer:
+    name: adamw
+    lr: 0.0001
+  ema:
+    decay: 0.99
+  coupling:
+    name: ot
+  objective:
+    name: mse
+  early_stopping:
+    enabled: true
+    patience: 10
+    metric_name: W2
+    min_delta: 0.05
+    mode: min
+  time_sampler:
+    name: discrete
+    num_steps: 1000
+    t0: 0.0001
+validation:
+  ratio: 0.1
+  batch_size: null
+  epoch_size: null

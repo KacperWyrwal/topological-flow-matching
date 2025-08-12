@@ -1,0 +1,2 @@
+- run.seed=0
+- experiments=brain/topo_resnet_test
