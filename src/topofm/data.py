@@ -197,7 +197,7 @@ class AnalyticToAnalyticTestLoader(MatchingTestLoader):
 
 
 # Brain signals utils
-DATASETS_DIR = "/home/kacperwyrwal/topological-flow-matching/datasets/"
+DATASETS_DIR = "../../../datasets"
 BRAIN_DIR = os.path.join(DATASETS_DIR, 'brain')
 
 

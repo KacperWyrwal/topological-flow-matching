@@ -145,22 +145,23 @@ class EmpiricalInFrame(InFrame):
         assert isinstance(base, Empirical), "EmpiricalInFrame requires an Empirical base distribution."
         super().__init__(base, frame)
         # Precompute transformed samples for efficiency
+        self._base_transformed = Empirical(samples=self.frame.transform(base.samples))
         self.base = Empirical(samples=self.frame.transform(base.samples))
 
     @property 
     def samples(self) -> torch.Tensor:
-        return self.base.samples
+        return self._base_transformed.samples
 
     def sample(self, shape: torch.Size) -> torch.Tensor:
         # Already transformed, just sample
-        return self.base.sample(shape)
+        return self._base_transformed.sample(shape)
 
     def __getitem__(self, idx) -> "EmpiricalInFrame":
         return type(self)(base=self.base[idx], frame=self.frame)
 
     @property
     def num_samples(self) -> int:
-        return self.base.num_samples
+        return self._base_transformed.num_samples
 
 
 class AnalyticInFrame(InFrame):
