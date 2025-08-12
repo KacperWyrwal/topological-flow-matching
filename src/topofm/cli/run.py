@@ -153,7 +153,7 @@ def _build_frame(cfg: DictConfig) -> torch.Tensor:
 
 
 def _build_sde(cfg: DictConfig, eigenvalues: torch.Tensor) -> HeatBMTSDE:
-    if cfg.sde.name == 'topological_heat_bm':
+    if cfg.sde.name == 'topological_heat_bm' or cfg.sde.name == 'euclidean_heat_bm':
         c = cfg.sde.c
         sigma = torch.as_tensor(cfg.sde.sigma)
         return HeatBMTSDE(eigenvalues=eigenvalues, c=c, sigma=sigma)
