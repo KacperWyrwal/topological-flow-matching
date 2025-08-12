@@ -146,7 +146,7 @@ class EmpiricalInFrame(InFrame):
         super().__init__(base, frame)
         # Precompute transformed samples for efficiency
         self._base_transformed = Empirical(samples=self.frame.transform(base.samples))
-        self.base = Empirical(samples=self.frame.transform(base.samples))
+        self.base = base
 
     @property 
     def samples(self) -> torch.Tensor:
