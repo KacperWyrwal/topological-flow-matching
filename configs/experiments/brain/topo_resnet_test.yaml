@@ -46,4 +46,5 @@ run:
   use_wandb: true
   wandb:
     project: topological-flow-matching
-    tags: [brain, topological, ot, test, "${str:run.seed}"]
+    tags: [brain, topological, ot, test, seed_sweep]
+    #, "${str:run.seed}"]
