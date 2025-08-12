@@ -33,6 +33,9 @@ plot:
 
 # Run and W&B
 run:
+  device: cpu
+  dtype: float64
+  mode: test
   use_wandb: true
   wandb:
     project: topological-flow-matching
