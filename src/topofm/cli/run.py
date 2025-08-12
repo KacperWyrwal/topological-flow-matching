@@ -74,6 +74,7 @@ from ..plotting import (
     plot_history,
 )
 from ..wandb_logger import WandBLogger
+from hydra.utils import to_absolute_path
 
 
 def _get_dtype(cfg: DictConfig) -> torch.dtype:
@@ -114,7 +115,8 @@ def _setup_wandb(cfg: DictConfig):
 
 def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
     if cfg.data.name == 'brain':
-        return load_brain_laplacian()
+        data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
+        return load_brain_laplacian(data_dir=data_dir)
     if cfg.data.name == 'gaussians_to_moons':
         if cfg.data.laplacian == 'fully_connected':
             A = torch.tensor([
@@ -179,7 +181,8 @@ def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
 
     if cfg.data.name == "brain":
         print("🧠 Loading brain dataset...")
-        x0, x1 = load_brain_data()
+        data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
+        x0, x1 = load_brain_data(data_dir=data_dir)
         print(f"✅ Brain data loaded: x0 shape={x0.shape}, x1 shape={x1.shape}")
         
         print("📊 Creating Empirical distributions...")

@@ -1,0 +1,4 @@
+- run.seed=4
+- experiments=brain/topo_resnet_test
+- train.num_epochs=1
+- run.device=cpu

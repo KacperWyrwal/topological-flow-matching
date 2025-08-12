@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import os
+from pathlib import Path
 
 import pandas as pd
 import scipy
@@ -8,6 +9,12 @@ import torch
 
 from .coupling import Coupling
 from .time import TimeSteps
+
+# Try to use Hydra to resolve absolute paths if available
+try:
+    from hydra.utils import to_absolute_path as _to_absolute_path
+except Exception:  # pragma: no cover - hydra not always present at import time
+    _to_absolute_path = None
 
 
 class TimeSampler(ABC):
@@ -197,11 +204,23 @@ class AnalyticToAnalyticTestLoader(MatchingTestLoader):
 
 
 # Brain signals utils
-DATASETS_DIR = "../../../datasets"
-BRAIN_DIR = os.path.join(DATASETS_DIR, 'brain')
+def _resolve_brain_dir(data_dir: str | None) -> str:
+    """Resolve brain dataset directory.
+
+    Priority:
+    1) explicit provided `data_dir`
+    2) Hydra-aware path: to_absolute_path("datasets/brain")
+    3) Fallback relative to repo root (two levels above this file): ../../datasets/brain
+    """
+    if data_dir is not None:
+        return data_dir
+    if _to_absolute_path is not None:
+        return _to_absolute_path("datasets/brain")
+    return str(Path(__file__).resolve().parents[2] / "datasets" / "brain")
 
 
-def download_brain_regions_centroids(data_dir: str = BRAIN_DIR):
+def download_brain_regions_centroids(data_dir: str | None = None):
+    data_dir = _resolve_brain_dir(data_dir)
     csv_url = "https://bitbucket.org/dpat/tools/raw/master/REF/ATLASES/HCP-MMP1_UniqueRegionList.csv"
     brain_regions_centroids_df = pd.read_csv(
         csv_url,
@@ -212,16 +231,19 @@ def download_brain_regions_centroids(data_dir: str = BRAIN_DIR):
     brain_regions_centroids_df.to_csv(os.path.join(data_dir, "brain_regions_centroids.csv"), index=False)
 
 
-def load_brain_regions_centroids(data_dir: str = BRAIN_DIR):
+def load_brain_regions_centroids(data_dir: str | None = None):
+    data_dir = _resolve_brain_dir(data_dir)
     return pd.read_csv(os.path.join(data_dir, "brain_regions_centroids.csv"))
 
 
-def load_brain_laplacian(data_dir: str = BRAIN_DIR) -> torch.Tensor:
+def load_brain_laplacian(data_dir: str | None = None) -> torch.Tensor:
+    data_dir = _resolve_brain_dir(data_dir)
     laplacian = scipy.io.loadmat(os.path.join(data_dir, "lap.mat"))['L']
     return torch.as_tensor(laplacian)
 
 
-def load_brain_data(data_dir: str = BRAIN_DIR) -> tuple[torch.Tensor, torch.Tensor]:
+def load_brain_data(data_dir: str | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+    data_dir = _resolve_brain_dir(data_dir)
     x1 = scipy.io.loadmat(os.path.join(data_dir, "aligned.mat"))['Xa'].T
     x0 = scipy.io.loadmat(os.path.join(data_dir, "liberal.mat"))['Xl'].T
     return torch.as_tensor(x0), torch.as_tensor(x1)
