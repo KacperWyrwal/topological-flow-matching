@@ -6,5 +6,7 @@ mode: test
 wandb:
   project: "topological-flow-matching"
   run_name: null  # auto-generated if null
+  notes: null
+  job_type: test
   tags: []
   entity: shil6408-university-of-oxford  # your username/team

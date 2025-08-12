@@ -6,6 +6,7 @@ import torch
 from matplotlib import pyplot as plt
 import wandb
 from omegaconf import OmegaConf
+from datetime import datetime
 
 # Fix circular imports by using specific imports
 from ..data import (
@@ -72,6 +73,7 @@ from ..plotting import (
     plot_2d_predictions,
     plot_history,
 )
+from ..wandb_logger import WandBLogger
 
 
 def _get_dtype(cfg: DictConfig) -> torch.dtype:
@@ -90,10 +92,8 @@ def _setup_wandb(cfg: DictConfig):
     # Generate run name if not specified
     run_name = cfg.run.wandb.run_name
     if run_name is None:
-        from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        sde_is_topological = cfg.sde.c != 0.0 # TODO have a better method for this
-        run_name = f"{cfg.data.name}_{cfg.model.name}_{sde_is_topological}_{cfg.run.mode}_{timestamp}"
+        run_name = f"{cfg.data.name}-{cfg.model.name}-{cfg.sde.name}-{cfg.run.mode}-{timestamp}"
     
     wandb.init(
         project=cfg.run.wandb.project,
@@ -101,7 +101,14 @@ def _setup_wandb(cfg: DictConfig):
         config=OmegaConf.to_container(cfg, resolve=True),
         tags=cfg.run.wandb.tags,
         entity=cfg.run.wandb.entity,
+        job_type=cfg.run.wandb.job_type, 
+        notes=cfg.run.wandb.notes,
     )
+
+    wandb.define_metric("epoch")
+    wandb.define_metric("train/*", step_metric="epoch")
+    wandb.define_metric("val/*",   step_metric="epoch")
+
     return wandb.run
 
 
@@ -144,7 +151,7 @@ def _build_frame(cfg: DictConfig) -> torch.Tensor:
 
 
 def _build_sde(cfg: DictConfig, eigenvalues: torch.Tensor) -> HeatBMTSDE:
-    if cfg.sde.name == 'heat_bm':
+    if cfg.sde.name == 'topological_heat_bm':
         c = cfg.sde.c
         sigma = torch.as_tensor(cfg.sde.sigma)
         return HeatBMTSDE(eigenvalues=eigenvalues, c=c, sigma=sigma)
@@ -440,7 +447,8 @@ def run_test(
 
     print("🔗 Setting up W&B...")
     wandb_run = _setup_wandb(cfg)
-    if wandb_run:
+    wandb_logger = WandBLogger(wandb_run) if wandb_run is not None else None
+    if wandb_logger and wandb_logger.is_enabled():
         print(f"✅ W&B logging enabled: {wandb_run.name}")
     else:
         print("ℹ️ W&B logging disabled")
@@ -459,8 +467,7 @@ def run_test(
         ema=ema,
         objective=objective,
         early_stopping=early_stopping,
-        use_wandb=cfg.run.use_wandb,
-        wandb_run=wandb_run,
+        logger=wandb_logger,
     )
     print("✅ Training completed!")
 
@@ -482,6 +489,10 @@ def run_test(
     print("📊 Test metrics:")
     print(test_metrics)
 
+    # Log training curves and test metrics via WandBLogger
+    if wandb_logger and wandb_logger.is_enabled():
+        wandb_logger.log_test(test_metrics)
+
     if cfg.plot.predictions.enabled:
         print("📊 Plotting predictions...")
         _plot_predictions(cfg, model=model, sde_solver=sde_solver, dataset=test_dataset, frame=frame, wandb_run=wandb_run)
@@ -490,14 +501,8 @@ def run_test(
         print("ℹ️ Not plotting predictions (disabled in config).")
 
     # Final W&B logging and cleanup
-    if wandb_run is not None:
-        print("🔗 Logging final metrics to W&B...")
-        # Log test metrics as individual scalars for proper visualization
-        wandb_run.log({
-            "test/W1": test_metrics["W1"],
-            "test/W2": test_metrics["W2"],
-        })
-        wandb_run.finish()
+    if wandb_logger and wandb_logger.is_enabled():
+        wandb_logger.finish()
         print("✅ W&B logging completed!")
 
 

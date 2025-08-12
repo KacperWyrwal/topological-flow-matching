@@ -1,5 +1,4 @@
 from collections import defaultdict
-from pandas.core.strings.accessor import NoNewAttributesMixin
 import tqdm
 import torch
 from torch_ema import ExponentialMovingAverage
@@ -12,6 +11,7 @@ from .sde_solvers import SDESolver, EulerMaruyamaSolver
 from .sde import SDE
 from .time import UniformTimeSteps
 from .data import TimeSampler, DiscreteTimeSampler, MatchingTrainLoader, MatchingTestLoader
+from .wandb_logger import WandBLogger
 
 
 @dataclass
@@ -156,8 +156,7 @@ def fit(
     objective: torch.nn.Module | None = None,
     eval_data_loader: MatchingTestLoader | None = None,
     early_stopping: EarlyStopping | None = None,
-    use_wandb: bool = False,
-    wandb_run = None,
+    logger: WandBLogger | None = None,
 ) -> dict[str, torch.Tensor]:
     # Early stopping requires validation data
     assert early_stopping is None or eval_data_loader is not None, "Early stopping requires eval_data_loader"
@@ -175,7 +174,6 @@ def fit(
 
     history = defaultdict(list)
     pbar = tqdm.trange(num_epochs, desc="Epochs")
-    break_early = False
     for epoch in pbar:
         # Training epoch
         avg_loss = train(
@@ -189,55 +187,37 @@ def fit(
         )
         # Validation epoch
         if eval_data_loader is not None:
-            metrics = evaluate(
+            eval_metrics = evaluate(
                 sde_solver=sde_solver,
                 model=model,
                 data_loader=eval_data_loader,
                 ema=ema,
             )
         else:
-            metrics = {}
+            eval_metrics = {}
 
-        # Update history
-        metrics["loss"] = avg_loss
+        # Bookkeeping
+        metrics = {
+            "loss": avg_loss,
+            **eval_metrics,
+        }
         for k, v in metrics.items():
-            history[k].append(v)        
-        if early_stopping is not None:
-            break_early = early_stopping.update(metrics, model)
-            metrics[f"best_{early_stopping.metric_name}"] = early_stopping.best_score
-
-        # Update progress bar
+            history[k].append(v)    
         pbar.set_postfix(metrics)
 
-        # Log to W&B if enabled
-        if use_wandb and wandb_run is not None:
-            # Log training metrics with consistent naming
-            wandb_run.log({
-                "epoch": epoch,
-                "train/loss": avg_loss,
-                "val/W1": metrics.get("W1", 0.0),
-                "val/W2": metrics.get("W2", 0.0),
-                f"val/best_{early_stopping.metric_name}": metrics.get(f"best_{early_stopping.metric_name}", 0.0) if early_stopping else 0.0,
-            })
+        # Log to W&B via logger if enabled (scalars + curves)
+        if logger is not None and logger.is_enabled():
+            logger.log_training(epoch=epoch, loss=avg_loss, eval_metrics=eval_metrics, history=history)
 
         # Early stopping
-        if break_early:
+        if (
+            early_stopping is not None 
+            and early_stopping.update(metrics, model) is True
+        ):
             print(f"Early stopping triggered after {epoch + 1} epochs")
+            assert early_stopping.best_params is not None, "Early stopping should always have best_params when used"
+            early_stopping.restore_best(model)
             break
-    
-    # Restore best model
-    if early_stopping is not None:
-        assert early_stopping.best_params is not None, "Early stopping should always have best_params when used"
-        early_stopping.restore_best(model)
-    
-    # Log final training state to W&B
-    if use_wandb and wandb_run is not None:
-        wandb_run.log({
-            "final_epoch": epoch + 1,
-        })
-        # Store early stopping info in run summary (not plotted)
-        wandb_run.summary["early_stopping_triggered"] = break_early
-    
     return history
 
 

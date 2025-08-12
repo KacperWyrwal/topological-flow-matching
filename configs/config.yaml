@@ -1,6 +1,5 @@
 defaults:
   - data: gaussians_to_moons 
-  - experiments: default
   - frame: spectral
   - hydra: default 
   - model: residual_nn
@@ -9,7 +8,7 @@ defaults:
   - plot/history: default
   - plot/predictions: default
   - run: default 
-  - sde: heat_bm 
+  - sde: topological_heat_bm 
   - sde_solver: euler_maruyama 
   - test: default
   - time_sampler: discrete
@@ -21,4 +20,5 @@ defaults:
   - train/early_stopping: default
   - train/time_sampler: discrete
   - validation: default
+  - experiments: ??
   - _self_

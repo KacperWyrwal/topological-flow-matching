@@ -151,7 +151,7 @@ class MatchingTestLoader(ABC):
 
 
 class EmpiricalToEmpiricalTestLoader(MatchingTestLoader):
-    def __init__(self, dataset: EmpiricalToEmpiricalDataset, batch_size: int):
+    def __init__(self, dataset: EmpiricalToEmpiricalDataset, batch_size: int | None = None):
         super().__init__()
         self.x0 = dataset.mu0.samples 
         self.x1 = dataset.mu1.samples 
@@ -159,18 +159,20 @@ class EmpiricalToEmpiricalTestLoader(MatchingTestLoader):
         assert self.x0.shape == self.x1.shape
         self.batch_size = batch_size
 
-        if self.batch_size == -1:
+        if self.batch_size is None:
             self.num_batches = 1
         else:
             num_batches, last = divmod(self.x0.shape[0], batch_size)
             self.num_batches = num_batches + int(last > 0)
 
     def __iter__(self):
-        # TODO Could actually call the __iter__ method from pytorch's dataloader
-        yield from zip(
-            torch.chunk(self.x0, self.batch_size), 
-            torch.chunk(self.x1, self.batch_size),
-        )
+        if self.batch_size is None:
+            yield self.x0, self.x1
+        else:
+            yield from zip(
+                torch.chunk(self.x0, self.batch_size), 
+                torch.chunk(self.x1, self.batch_size),
+            )
 
     def __len__(self) -> int:
         return self.num_batches
