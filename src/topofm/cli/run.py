@@ -14,6 +14,8 @@ from ..data import (
     EmpiricalToEmpiricalDataset,
     load_brain_data, 
     load_brain_laplacian,
+    load_earthquake_data,
+    load_earthquake_laplacian,
     MatchingDataset,
     TimeSampler,
     UniformTimeSampler,
@@ -22,6 +24,8 @@ from ..data import (
     MatchingTestLoader,
     EmpiricalToEmpiricalTestLoader,
     AnalyticToAnalyticTestLoader,
+    AnalyticToEmpiricalTestLoader,
+    AnalyticToEmpiricalDataset,
 )
 from ..frames import (
     Frame,
@@ -94,7 +98,7 @@ def _setup_wandb(cfg: DictConfig):
     run_name = cfg.run.wandb.run_name
     if run_name is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_name = f"{cfg.data.name}-{cfg.model.name}-{cfg.sde.name}-{cfg.run.mode}-{timestamp}"
+        run_name = f"{cfg.data.name}-{cfg.model.name}-{cfg.sde.name}-{cfg.train.coupling.name}-{cfg.run.mode}-{timestamp}"
     
     wandb.init(
         project=cfg.run.wandb.project,
@@ -128,6 +132,9 @@ def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
             return L
         else:
             raise ValueError(f"Unsupported Laplacian type {cfg.data.laplacian} for dataset {cfg.data.name}")
+    if cfg.data.name == 'earthquakes':
+        data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
+        return load_earthquake_laplacian(data_dir=data_dir)
     raise ValueError(f"Unsupported tensor dataset name: {cfg.data.name}")
 
 
@@ -216,6 +223,27 @@ def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
         dataset = AnalyticToAnalyticDataset(mu0, mu1)
         print(f"✅ Dataset created: {type(dataset).__name__}")
         return dataset
+
+    if cfg.data.name == 'earthquakes':
+        print("📊 Creating Earthquakes dataset...")
+        print("🔧 Loading earthquake data...")
+        data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
+        x1 = load_earthquake_data(data_dir=data_dir)
+
+        print("🔧 Wrapping in EmpiricalInFrame...")
+        mu1 = Empirical(x0)
+        mu1 = EmpiricalInFrame(mu0, frame)
+        print("✅ Frame wrapping completed")
+
+        print("Creating mu0 (Gaussian)")
+        mu0 = torch.distributions.MultivariateNormal(mean=torch.zeros(x1.shape[1]), cov=torch.eye(x1.shape[1]))
+        # mu0 = AnalyticInFrame(mu0, frame)
+
+        print("📦 Creating AnalyticToEmpiricalDataset...")
+        dataset = AnalyticToEmpiricalDataset(mu0, mu1)
+        print(f"✅ Dataset created: {type(dataset).__name__}")
+        print(f"✅ Earthquake data loaded: x0 shape={x0.shape}")
+        return x0
 
     print(f"❌ Unknown dataset: {cfg.data.name}")
     raise ValueError(f"Unknown dataset: {cfg.data.name}")
@@ -333,7 +361,10 @@ def _build_test_data_loader(cfg: DictConfig, dataset: MatchingDataset) -> Matchi
             epoch_size=cfg.test.epoch_size,
         )
     if cfg.data.task == 'analytic_to_empirical':
-        raise NotImplementedError
+        return AnalyticToEmpiricalTestLoader(
+            dataset=dataset, 
+            batch_size=cfg.test.batch_size, 
+        )
     raise ValueError
 
 
@@ -350,7 +381,10 @@ def _build_eval_data_loader(cfg: DictConfig, dataset: MatchingDataset) -> Matchi
             epoch_size=cfg.validation.epoch_size,
         )
     if cfg.data.task == 'analytic_to_empirical':
-        raise NotImplementedError
+        return AnalyticToEmpiricalTestLoader(
+            dataset=dataset, 
+            batch_size=cfg.validation.batch_size, 
+        )
     raise ValueError
 
 

@@ -56,6 +56,11 @@ from .data import (
     DiscreteTimeSampler,
     MatchingDataset,
     load_brain_data, 
+    load_brain_laplacian,
+    load_brain_regions_centroids,
+    download_brain_regions_centroids,
+    load_earthquake_data,
+    load_earthquake_laplacian,
 )
 from .models import (
     timestep_embedding,
@@ -149,6 +154,11 @@ __all__ = [
     "DiscreteTimeSampler",
     "MatchingDataset",
     "load_brain_data",
+    "load_brain_laplacian",
+    "load_brain_regions_centroids",
+    "download_brain_regions_centroids",
+    "load_earthquake_data",
+    "load_earthquake_laplacian",
     # models
     "timestep_embedding",
     "FCs",

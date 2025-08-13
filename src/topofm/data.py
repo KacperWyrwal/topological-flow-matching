@@ -2,11 +2,13 @@ from abc import ABC, abstractmethod
 import os
 from pathlib import Path
 
+import pickle
+import requests
 import pandas as pd
 import scipy
-from torch.distributions import Distribution
 import torch
 
+from .distributions import Distribution, EmpiricalInFrame, Empirical, AnalyticInFrame
 from .coupling import Coupling
 from .time import TimeSteps
 
@@ -185,6 +187,24 @@ class EmpiricalToEmpiricalTestLoader(MatchingTestLoader):
         return self.num_batches
 
 
+class AnalyticToEmpiricalTestLoader(MatchingTestLoader):
+    def __init__(self, dataset: AnalyticToEmpiricalDataset, batch_size: int):
+        super().__init__()
+        self.mu0 = dataset.mu0
+        self.mu1: EmpiricalInFrame | Empirical = dataset.mu1
+        self.batch_size = batch_size
+
+    def __iter__(self):
+        mu0_samples = self.mu0.sample((self.mu1.num_samples,))
+        if self.batch_size is None:
+            yield mu0_samples, self.mu1.samples
+        else:
+            yield from zip(
+                torch.chunk(mu0_samples, self.batch_size),
+                torch.chunk(self.mu1.samples, self.batch_size),
+            )
+
+
 class AnalyticToAnalyticTestLoader(MatchingTestLoader):
     def __init__(self, dataset: AnalyticToAnalyticDataset, batch_size: int, epoch_size: int):
         super().__init__()
@@ -247,3 +267,106 @@ def load_brain_data(data_dir: str | None = None) -> tuple[torch.Tensor, torch.Te
     x1 = scipy.io.loadmat(os.path.join(data_dir, "aligned.mat"))['Xa'].T
     x0 = scipy.io.loadmat(os.path.join(data_dir, "liberal.mat"))['Xl'].T
     return torch.as_tensor(x0), torch.as_tensor(x1)
+
+
+"""
+Dataset Summary
+---------------
+
+This pickle file contains five sequentially pickled objects representing 
+a processed earthquake event dataset mapped onto a spherical mesh:
+
+1. `G` (networkx.Graph)
+   - 576 nodes: unique mesh vertices that had at least one M5.5+ event between 1990–2018.
+   - 1,524 undirected edges constructed via a 10-nearest neighbour search (mutual k-NN), 
+     based on geodesic distances between vertices.
+   - Average degree ≈ 5.29, degree range 0–11, with 14 isolated vertices.
+   - All edges are unweighted (`weight = 1.0`).
+
+2. `L` (numpy.ndarray, shape=(576, 576))
+   - Symmetric normalized graph Laplacian computed from `G`.
+   - Verified to match `networkx.normalized_laplacian_matrix(G)`.
+
+3. `evs` (numpy.ndarray, shape=(576,))
+   - Eigenvalues of the Laplacian `L`.
+   - All values lie within [0, 2], as expected for the normalized Laplacian.
+
+4. `V` (numpy.ndarray, shape=(576, 576))
+   - Eigenvectors of `L`.
+   - Columns are orthonormal and satisfy `L @ V ≈ V @ diag(evs)`.
+
+5. `GS` (numpy.ndarray, shape=(29, 576))
+   - Yearly graph signals: earthquake magnitudes aggregated per vertex per year 
+     (1990–2018 → 29 rows; vertices → columns).
+   - Column means are approximately zero, consistent with preprocessing by 
+     subtracting the mean over years.
+
+Data Processing Pipeline (original experiment)
+----------------------------------------------
+- Start with IRIS catalogue: M5.5+ events (1990–2018), total 12,940 events.
+- Map each event to the nearest vertex in an icosahedral triangulated mesh of the Earth 
+  (level-3 refinement, 1,922 vertices).
+- Keep only the 576 vertices with at least one event.
+- Construct a mutual 10-nearest neighbour graph using geodesic distances.
+- Compute the symmetric normalized Laplacian, its eigenvalues, and eigenvectors.
+- Aggregate events yearly per vertex, take magnitudes as signals, 
+  and remove the mean magnitude over years.
+"""
+
+def _resolve_earthquake_dir(data_dir: str | None) -> str:
+    if data_dir is not None:
+        return data_dir
+    if _to_absolute_path is not None:
+        return _to_absolute_path("datasets/earthquakes")
+    return str(Path(__file__).resolve().parents[2] / "datasets" / "earthquakes")
+
+
+# Earthquake data utils
+def download_earthquake_data(data_dir: str | None = None):
+    """
+    Download earthquake data from https://github.com/cookbook-ms/topological_SB_matching/blob/7558367c1847b0b274ca006796ef28e3e809da01/TSBLearning/code/datasets/earthquakes/eqs.pkl. 
+    """
+    data_dir = _resolve_earthquake_dir(data_dir)
+    os.makedirs(data_dir, exist_ok=True)
+    url = (
+        "https://raw.githubusercontent.com/cookbook-ms/topological_SB_matching/"
+        "7558367c1847b0b274ca006796ef28e3e809da01/TSBLearning/code/datasets/earthquakes/eqs.pkl"
+    )
+    response = requests.get(url, timeout=60)
+    response.raise_for_status()
+    with open(os.path.join(data_dir, 'eqs.pkl'), 'wb') as f:
+        f.write(response.content)
+    print(f"Downloaded earthquake data to {data_dir}")
+
+
+def load_earthquake_laplacian(data_dir: str | None = None) -> torch.Tensor:
+    """Load the symmetric normalized graph Laplacian L (576x576).
+
+    The pickle contains: G, L, evs, V, GS. We read in order and return L.
+    """
+    data_dir = _resolve_earthquake_dir(data_dir)
+    with open(os.path.join(data_dir, 'eqs.pkl'), 'rb') as f:
+        _G = pickle.load(f)   # networkx.Graph (unused here)
+        L = pickle.load(f)    # (576, 576) numpy array
+        # Consume remaining objects to leave file pointer at end for safety
+        _evs = pickle.load(f) # (576,) eigenvalues (unused)
+        _V = pickle.load(f)   # (576, 576) eigenvectors (unused)
+        _GS = pickle.load(f)  # (29, 576) yearly signals (unused)
+    return torch.as_tensor(L)
+
+
+def load_earthquake_data(data_dir: str | None = None) -> torch.Tensor:
+    """Load yearly graph signals GS with shape (29, 576).
+
+    Each row is a year's magnitudes per vertex; columns correspond to the 576
+    vertices used to build the graph. No rows are dropped per the dataset
+    description (1990–2018 inclusive → 29 rows).
+    """
+    data_dir = _resolve_earthquake_dir(data_dir)
+    with open(os.path.join(data_dir, 'eqs.pkl'), 'rb') as f:
+        _G = pickle.load(f)   # networkx.Graph (unused)
+        _L = pickle.load(f)   # Laplacian (unused here)
+        _evs = pickle.load(f) # eigenvalues (unused)
+        _V = pickle.load(f)   # eigenvectors (unused)
+        GS = pickle.load(f)   # (29, 576)
+    return torch.as_tensor(GS)

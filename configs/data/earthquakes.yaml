@@ -1,0 +1,4 @@
+name: earthquakes
+task: analytic_to_empirical
+test_size: 0.2
+dir: datasets/earthquakes
