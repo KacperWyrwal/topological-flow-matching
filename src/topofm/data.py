@@ -368,5 +368,5 @@ def load_earthquake_data(data_dir: str | None = None) -> torch.Tensor:
         _L = pickle.load(f)   # Laplacian (unused here)
         _evs = pickle.load(f) # eigenvalues (unused)
         _V = pickle.load(f)   # eigenvectors (unused)
-        GS = pickle.load(f)   # (29, 576)
+        GS = pickle.load(f)[:-1]   # (29, 576)
     return torch.as_tensor(GS)

@@ -231,19 +231,19 @@ def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
         x1 = load_earthquake_data(data_dir=data_dir)
 
         print("🔧 Wrapping in EmpiricalInFrame...")
-        mu1 = Empirical(x0)
-        mu1 = EmpiricalInFrame(mu0, frame)
+        mu1 = Empirical(x1)
+        mu1 = EmpiricalInFrame(mu1, frame)
         print("✅ Frame wrapping completed")
 
         print("Creating mu0 (Gaussian)")
-        mu0 = torch.distributions.MultivariateNormal(mean=torch.zeros(x1.shape[1]), cov=torch.eye(x1.shape[1]))
+        mu0 = torch.distributions.MultivariateNormal(torch.zeros(x1.shape[1]), torch.eye(x1.shape[1]))
         # mu0 = AnalyticInFrame(mu0, frame)
 
         print("📦 Creating AnalyticToEmpiricalDataset...")
         dataset = AnalyticToEmpiricalDataset(mu0, mu1)
         print(f"✅ Dataset created: {type(dataset).__name__}")
-        print(f"✅ Earthquake data loaded: x0 shape={x0.shape}")
-        return x0
+        print(f"✅ Earthquake data loaded: x1 shape={x1.shape}")
+        return dataset
 
     print(f"❌ Unknown dataset: {cfg.data.name}")
     raise ValueError(f"Unknown dataset: {cfg.data.name}")
@@ -430,6 +430,40 @@ def _plot_history(cfg: DictConfig, history: dict[str, list[float]], wandb_run = 
     return 
 
 
+def split_train_test(cfg: DictConfig, dataset: MatchingDataset) -> tuple[MatchingDataset, MatchingDataset]:
+    if cfg.test.enabled is False:
+        return dataset, None
+    assert 1 >= cfg.test.ratio >= 0, "Test ratio must be between 0 and 1 if test is enabled"
+
+    if cfg.data.name == 'earthquakes':
+        return dataset, dataset
+    
+    if cfg.data.name == 'brain':
+        return dataset.train_test_split(cfg.test.ratio)
+
+    if cfg.data.name == 'gaussians_to_moons':
+        return dataset.train_test_split(cfg.test.ratio)
+    
+    raise ValueError(f"Unknown dataset: {cfg.data.name}")
+
+
+def split_train_validation(cfg: DictConfig, dataset: MatchingDataset) -> tuple[MatchingDataset, MatchingDataset]:
+    if cfg.validation.enabled is False:
+        return dataset, None
+    assert 1 >= cfg.validation.ratio >= 0, "Validation ratio must be between 0 and 1 if validation is enabled"
+
+    if cfg.data.name == 'earthquakes':
+        return dataset, dataset
+    
+    if cfg.data.name == 'brain':
+        return dataset.train_test_split(cfg.validation.ratio)
+
+    if cfg.data.name == 'gaussians_to_moons':
+        return dataset.train_test_split(cfg.validation.ratio)
+    
+    raise ValueError(f"Unknown dataset: {cfg.data.name}")
+
+
 def run_test(
     cfg: DictConfig, 
     frame: Frame, 
@@ -547,7 +581,6 @@ def run_validation() -> None:
     pass 
 
 
-
 @hydra.main(config_path="../../../configs", config_name="config", version_base="1.3")
 def main(cfg: DictConfig) -> None:
     print("🚀 Starting main function...")
@@ -569,7 +602,7 @@ def main(cfg: DictConfig) -> None:
     print(f"✅ Dataset built: {type(dataset).__name__}, dim={dataset.dim}")
     
     print("✂️ Splitting dataset...")
-    train_dataset, test_dataset = dataset.train_test_split(cfg.test.ratio)
+    train_dataset, test_dataset = split_train_test(cfg, dataset)
     print(f"✅ Dataset split")
     
     print("🌊 Building SDE...")

@@ -1,3 +1,4 @@
+enabled: true
 ratio: 0.2
 batch_size: 512
 epoch_size: 8096
