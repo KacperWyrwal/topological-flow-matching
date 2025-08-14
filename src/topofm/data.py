@@ -188,11 +188,17 @@ class EmpiricalToEmpiricalTestLoader(MatchingTestLoader):
 
 
 class AnalyticToEmpiricalTestLoader(MatchingTestLoader):
-    def __init__(self, dataset: AnalyticToEmpiricalDataset, batch_size: int):
+    def __init__(self, dataset: AnalyticToEmpiricalDataset, batch_size: int | None = None):
         super().__init__()
         self.mu0 = dataset.mu0
         self.mu1: EmpiricalInFrame | Empirical = dataset.mu1
         self.batch_size = batch_size
+
+        if self.batch_size is None:
+            self.num_batches = 1
+        else:
+            num_batches, last = divmod(self.x0.shape[0], batch_size)
+            self.num_batches = num_batches + int(last > 0)
 
     def __iter__(self):
         mu0_samples = self.mu0.sample((self.mu1.num_samples,))
@@ -203,6 +209,9 @@ class AnalyticToEmpiricalTestLoader(MatchingTestLoader):
                 torch.chunk(mu0_samples, self.batch_size),
                 torch.chunk(self.mu1.samples, self.batch_size),
             )
+
+    def __len__(self) -> int:
+        return self.num_batches
 
 
 class AnalyticToAnalyticTestLoader(MatchingTestLoader):
