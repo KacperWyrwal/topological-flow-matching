@@ -13,6 +13,7 @@ defaults:
 # Training setup
 train:
   num_epochs: 100
+  epoch_size: 2048
   early_stopping:
     enabled: true
     patience: 10
