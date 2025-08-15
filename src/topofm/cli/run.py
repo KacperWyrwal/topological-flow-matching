@@ -173,7 +173,7 @@ def _build_model(cfg: DictConfig, data_dim: int) -> torch.nn.Module:
             time_embed_dim=cfg.model.time_embed_dim, 
             num_res_block=cfg.model.num_res_block,
         )
-        assert model.device() == torch.get_default_device()
+        assert model.device == torch.get_default_device()
         return model
     elif cfg.model.name == "gcn":
         raise NotImplementedError("GCN support coming soon.")
