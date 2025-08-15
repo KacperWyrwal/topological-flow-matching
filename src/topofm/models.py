@@ -53,14 +53,6 @@ class ResNet_FC(torch.nn.Module):
             h = (h + res_block(h)) / np.sqrt(2)
         return h
 
-    def device(self) -> torch.device:
-        # Check that all parameters are on the same device
-        device = next(self.parameters()).device
-        for param in self.parameters():
-            if param.device != device:
-                raise ValueError(f"All parameters should be on the same device.")
-        return device
-
 
 class TimestepBlock(torch.nn.Module):
     @abstractmethod
@@ -283,5 +275,14 @@ class ResidualNN(torch.nn.Module):
         x_out = self.x_module(x)
         out = self.out_module(x_out + t_out)
         return out
+
+    @property
+    def device(self) -> torch.device:
+        # Check that all parameters are on the same device
+        device = next(self.parameters()).device
+        for param in self.parameters():
+            if param.device != device:
+                raise ValueError(f"All parameters should be on the same device.")
+        return device
 
 
