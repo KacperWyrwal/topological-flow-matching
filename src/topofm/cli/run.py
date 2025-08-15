@@ -167,12 +167,14 @@ def _build_sde(cfg: DictConfig, eigenvalues: torch.Tensor) -> HeatBMTSDE:
 
 def _build_model(cfg: DictConfig, data_dim: int) -> torch.nn.Module:
     if cfg.model.name == "residual_nn":
-        return ResidualNN(
+        model = ResidualNN(
             data_dim=data_dim, 
             hidden_dim=cfg.model.hidden_dim, 
             time_embed_dim=cfg.model.time_embed_dim, 
             num_res_block=cfg.model.num_res_block,
         )
+        assert model.device() == torch.get_default_device()
+        return model
     elif cfg.model.name == "gcn":
         raise NotImplementedError("GCN support coming soon.")
     else:
@@ -237,6 +239,8 @@ def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
         mu0 = torch.distributions.Independent(mu0, 1)
         print("✅ Normal distribution created")
         # mu0 = AnalyticInFrame(mu0, frame)
+
+        assert mu0.sample((1, )).device == mu1.sample((1, )).device == torch.get_default_device()
 
         dataset = AnalyticToEmpiricalDataset(mu0, mu1)
         print(f"✅ Dataset created: {type(dataset).__name__}")
