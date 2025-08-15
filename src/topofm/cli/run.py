@@ -14,8 +14,8 @@ from ..data import (
     EmpiricalToEmpiricalDataset,
     load_brain_data, 
     load_brain_laplacian,
-    load_earthquake_data,
-    load_earthquake_laplacian,
+    load_earthquakes_data,
+    load_earthquakes_laplacian,
     MatchingDataset,
     TimeSampler,
     UniformTimeSampler,
@@ -118,8 +118,8 @@ def _setup_wandb(cfg: DictConfig):
 
 
 def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
+    data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
     if cfg.data.name == 'brain':
-        data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
         return load_brain_laplacian(data_dir=data_dir)
     if cfg.data.name == 'gaussians_to_moons':
         if cfg.data.laplacian == 'fully_connected':
@@ -133,8 +133,7 @@ def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
         else:
             raise ValueError(f"Unsupported Laplacian type {cfg.data.laplacian} for dataset {cfg.data.name}")
     if cfg.data.name == 'earthquakes':
-        data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
-        return load_earthquake_laplacian(data_dir=data_dir)
+        return load_earthquakes_laplacian(data_dir=data_dir)
     raise ValueError(f"Unsupported tensor dataset name: {cfg.data.name}")
 
 
@@ -182,13 +181,13 @@ def _build_model(cfg: DictConfig, data_dim: int) -> torch.nn.Module:
 
 def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
     print(f"🔍 Building dataset: name={cfg.data.name}, task={cfg.data.task}")
+    data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
     
     frame = _build_frame(cfg)
     print("✅ Frame built for dataset")
 
     if cfg.data.name == "brain":
         print("🧠 Loading brain dataset...")
-        data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
         x0, x1 = load_brain_data(data_dir=data_dir)
         print(f"✅ Brain data loaded: x0 shape={x0.shape}, x1 shape={x1.shape}")
         
@@ -207,42 +206,40 @@ def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
 
     if cfg.data.name == "gaussians_to_moons":
         print("📊 Creating Gaussians to Moons dataset...")
-        print(f"🔧 Creating EightGaussians with radius={cfg.data.radius}, noise_std={cfg.data.gaussians_noise}")
         mu0 = EightGaussians(radius=cfg.data.radius, noise_std=cfg.data.gaussians_noise)
-        print("✅ EightGaussians distribution created")
-        
-        print(f"🔧 Creating Moons with noise_std={cfg.data.moons_noise}")
+        print(f"✅ EightGaussians distribution created with radius={cfg.data.radius} and noise_std={cfg.data.gaussians_noise}")
+
         mu1 = Moons(noise_std=cfg.data.moons_noise)
-        print("✅ Moons distribution created")
+        print(f"✅ Moons distribution created with noise_std={cfg.data.moons_noise}")        
         
-        print("🔧 Wrapping in AnalyticInFrame...")
         mu0, mu1 = AnalyticInFrame(mu0, frame), AnalyticInFrame(mu1, frame)
-        print("✅ Frame wrapping completed")
+        print("✅ Wrapped EightGaussians and Moons in AnalyticInFrame")
         
-        print("📦 Creating AnalyticToAnalyticDataset...")
         dataset = AnalyticToAnalyticDataset(mu0, mu1)
         print(f"✅ Dataset created: {type(dataset).__name__}")
         return dataset
 
     if cfg.data.name == 'earthquakes':
         print("📊 Creating Earthquakes dataset...")
-        print("🔧 Loading earthquake data...")
-        data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
-        x1 = load_earthquake_data(data_dir=data_dir)
-
-        print("🔧 Wrapping in EmpiricalInFrame...")
+        x1 = load_earthquakes_data(data_dir=data_dir)
+        print(f"✅ Earthquake data loaded: x1 shape={x1.shape}")
         mu1 = Empirical(x1)
+        print(f"✅ Empirical distribution created")
         mu1 = EmpiricalInFrame(mu1, frame)
-        print("✅ Frame wrapping completed")
+        print(f"✅ Wrapped Empirical distribution in EmpiricalInFrame")
 
-        print("Creating mu0 (Gaussian)")
-        mu0 = torch.distributions.MultivariateNormal(torch.zeros(x1.shape[1]), torch.eye(x1.shape[1]))
+        mu0_mean = torch.zeros(x1.shape[-1:])
+        if cfg.data.gaussian_std == 'from_data':
+            mu0_std = torch.std(x1, dim=0)
+        else:
+            mu0_std = torch.full_like(mu0_mean, cfg.data.gaussian_std)
+        mu0 = torch.distributions.Normal(mu0_mean, mu0_std)
+        mu0 = torch.distributions.Independent(mu0, 1)
+        print("✅ Normal distribution created")
         # mu0 = AnalyticInFrame(mu0, frame)
 
-        print("📦 Creating AnalyticToEmpiricalDataset...")
         dataset = AnalyticToEmpiricalDataset(mu0, mu1)
         print(f"✅ Dataset created: {type(dataset).__name__}")
-        print(f"✅ Earthquake data loaded: x1 shape={x1.shape}")
         return dataset
 
     print(f"❌ Unknown dataset: {cfg.data.name}")

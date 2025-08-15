@@ -59,8 +59,8 @@ from .data import (
     load_brain_laplacian,
     load_brain_regions_centroids,
     download_brain_regions_centroids,
-    load_earthquake_data,
-    load_earthquake_laplacian,
+    load_earthquakes_data,
+    load_earthquakes_laplacian,
 )
 from .models import (
     timestep_embedding,
@@ -157,8 +157,8 @@ __all__ = [
     "load_brain_laplacian",
     "load_brain_regions_centroids",
     "download_brain_regions_centroids",
-    "load_earthquake_data",
-    "load_earthquake_laplacian",
+    "load_earthquakes_data",
+    "load_earthquakes_laplacian",
     # models
     "timestep_embedding",
     "FCs",

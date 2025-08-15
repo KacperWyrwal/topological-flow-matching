@@ -20,5 +20,5 @@ defaults:
   - train/early_stopping: default
   - train/time_sampler: discrete
   - validation: default
-  - experiments: ??
+  - experiment: ??
   - _self_

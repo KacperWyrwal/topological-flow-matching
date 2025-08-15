@@ -232,24 +232,10 @@ class AnalyticToAnalyticTestLoader(MatchingTestLoader):
         return self.num_batches
 
 
-# Brain signals utils
-def _resolve_brain_dir(data_dir: str | None) -> str:
-    """Resolve brain dataset directory.
-
-    Priority:
-    1) explicit provided `data_dir`
-    2) Hydra-aware path: to_absolute_path("datasets/brain")
-    3) Fallback relative to repo root (two levels above this file): ../../datasets/brain
-    """
-    if data_dir is not None:
-        return data_dir
-    if _to_absolute_path is not None:
-        return _to_absolute_path("datasets/brain")
-    return str(Path(__file__).resolve().parents[2] / "datasets" / "brain")
-
-
+"""
+Brain signals utils
+"""
 def download_brain_regions_centroids(data_dir: str | None = None):
-    data_dir = _resolve_brain_dir(data_dir)
     csv_url = "https://bitbucket.org/dpat/tools/raw/master/REF/ATLASES/HCP-MMP1_UniqueRegionList.csv"
     brain_regions_centroids_df = pd.read_csv(
         csv_url,
@@ -261,18 +247,15 @@ def download_brain_regions_centroids(data_dir: str | None = None):
 
 
 def load_brain_regions_centroids(data_dir: str | None = None):
-    data_dir = _resolve_brain_dir(data_dir)
     return pd.read_csv(os.path.join(data_dir, "brain_regions_centroids.csv"))
 
 
 def load_brain_laplacian(data_dir: str | None = None) -> torch.Tensor:
-    data_dir = _resolve_brain_dir(data_dir)
     laplacian = scipy.io.loadmat(os.path.join(data_dir, "lap.mat"))['L']
     return torch.as_tensor(laplacian)
 
 
 def load_brain_data(data_dir: str | None = None) -> tuple[torch.Tensor, torch.Tensor]:
-    data_dir = _resolve_brain_dir(data_dir)
     x1 = scipy.io.loadmat(os.path.join(data_dir, "aligned.mat"))['Xa'].T
     x0 = scipy.io.loadmat(os.path.join(data_dir, "liberal.mat"))['Xl'].T
     return torch.as_tensor(x0), torch.as_tensor(x1)
@@ -321,21 +304,11 @@ Data Processing Pipeline (original experiment)
 - Aggregate events yearly per vertex, take magnitudes as signals, 
   and remove the mean magnitude over years.
 """
-
-def _resolve_earthquake_dir(data_dir: str | None) -> str:
-    if data_dir is not None:
-        return data_dir
-    if _to_absolute_path is not None:
-        return _to_absolute_path("datasets/earthquakes")
-    return str(Path(__file__).resolve().parents[2] / "datasets" / "earthquakes")
-
-
 # Earthquake data utils
-def download_earthquake_data(data_dir: str | None = None):
+def download_earthquakes_data(data_dir: str | None = None):
     """
-    Download earthquake data from https://github.com/cookbook-ms/topological_SB_matching/blob/7558367c1847b0b274ca006796ef28e3e809da01/TSBLearning/code/datasets/earthquakes/eqs.pkl. 
+    Download earthquakes data from https://github.com/cookbook-ms/topological_SB_matching/blob/7558367c1847b0b274ca006796ef28e3e809da01/TSBLearning/code/datasets/earthquakes/eqs.pkl. 
     """
-    data_dir = _resolve_earthquake_dir(data_dir)
     os.makedirs(data_dir, exist_ok=True)
     url = (
         "https://raw.githubusercontent.com/cookbook-ms/topological_SB_matching/"
@@ -345,15 +318,14 @@ def download_earthquake_data(data_dir: str | None = None):
     response.raise_for_status()
     with open(os.path.join(data_dir, 'eqs.pkl'), 'wb') as f:
         f.write(response.content)
-    print(f"Downloaded earthquake data to {data_dir}")
+    print(f"Downloaded earthquakes data to {data_dir}")
 
 
-def load_earthquake_laplacian(data_dir: str | None = None) -> torch.Tensor:
+def load_earthquakes_laplacian(data_dir: str | None = None) -> torch.Tensor:
     """Load the symmetric normalized graph Laplacian L (576x576).
 
     The pickle contains: G, L, evs, V, GS. We read in order and return L.
     """
-    data_dir = _resolve_earthquake_dir(data_dir)
     with open(os.path.join(data_dir, 'eqs.pkl'), 'rb') as f:
         _G = pickle.load(f)   # networkx.Graph (unused here)
         L = pickle.load(f)    # (576, 576) numpy array
@@ -364,18 +336,17 @@ def load_earthquake_laplacian(data_dir: str | None = None) -> torch.Tensor:
     return torch.as_tensor(L)
 
 
-def load_earthquake_data(data_dir: str | None = None) -> torch.Tensor:
+def load_earthquakes_data(data_dir: str | None = None) -> torch.Tensor:
     """Load yearly graph signals GS with shape (29, 576).
 
     Each row is a year's magnitudes per vertex; columns correspond to the 576
     vertices used to build the graph. No rows are dropped per the dataset
     description (1990–2018 inclusive → 29 rows).
     """
-    data_dir = _resolve_earthquake_dir(data_dir)
     with open(os.path.join(data_dir, 'eqs.pkl'), 'rb') as f:
         _G = pickle.load(f)   # networkx.Graph (unused)
         _L = pickle.load(f)   # Laplacian (unused here)
         _evs = pickle.load(f) # eigenvalues (unused)
         _V = pickle.load(f)   # eigenvectors (unused)
-        GS = pickle.load(f)[:-1]   # (29, 576)
+        GS = pickle.load(f)[:-1]   # (29 - 1, 576)
     return torch.as_tensor(GS)
