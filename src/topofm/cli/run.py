@@ -133,7 +133,9 @@ def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
         else:
             raise ValueError(f"Unsupported Laplacian type {cfg.data.laplacian} for dataset {cfg.data.name}")
     if cfg.data.name == 'earthquakes':
-        return load_earthquakes_laplacian(data_dir=data_dir)
+        L = load_earthquakes_laplacian(data_dir=data_dir)
+        assert L.device == torch.get_default_device()
+        return L
     raise ValueError(f"Unsupported tensor dataset name: {cfg.data.name}")
 
 
@@ -472,31 +474,24 @@ def run_test(
     test_dataset: MatchingDataset, 
     sde: SDE, 
 ) -> None:
-    print("🔨 Building model...")
     model = _build_model(cfg, data_dim=train_dataset.dim)
     print(f"✅ Model built: {type(model).__name__}")
     
-    print("⚙️ Building SDE solver...")
     sde_solver = _build_sde_solver(cfg, sde=sde)
     print(f"✅ SDE solver built: {type(sde_solver).__name__}")
     
-    print("🎯 Building optimizer...")
     optimizer = _build_optimizer(cfg, model=model)
     print(f"✅ Optimizer built: {type(optimizer).__name__}")
     
-    print("📈 Building EMA...")
     ema = _build_ema(cfg, model=model)
     print(f"✅ EMA built: {type(ema).__name__}")
     
-    print("🎯 Building objective...")
     objective = _build_objective(cfg)
     print(f"✅ Objective built: {type(objective).__name__}")
 
-    print("✂️ Splitting train/eval datasets...")
     train_dataset, eval_dataset = train_dataset.train_test_split(cfg.validation.ratio)
     print(f"✅ Train/eval split")
 
-    print("📚 Building data loaders...")
     train_data_loader = _build_train_data_loader(cfg, dataset=train_dataset, sde=sde)
     print("✅ Train data loader built")
     
@@ -506,18 +501,15 @@ def run_test(
     test_data_loader = _build_test_data_loader(cfg, dataset=test_dataset)
     print("✅ Test data loader built")
     
-    print("⏰ Building time sampler...")
     time_sampler = _build_time_sampler(cfg)
     print(f"✅ Time sampler built: {type(time_sampler).__name__}")
 
-    print("🛑 Building early stopping...")
     early_stopping = _build_early_stopping(cfg)
     if early_stopping is not None:
         print(f"✅ Early stopping enabled: patience={early_stopping.patience}, metric={early_stopping.metric_name}, min_delta={early_stopping.min_delta}")
     else:
         print("ℹ️ Early stopping disabled")
 
-    print("🔗 Setting up W&B...")
     wandb_run = _setup_wandb(cfg)
     wandb_logger = WandBLogger(wandb_run) if wandb_run is not None else None
     if wandb_logger and wandb_logger.is_enabled():
@@ -525,7 +517,6 @@ def run_test(
     else:
         print("ℹ️ W&B logging disabled")
 
-    print("🚀 Starting training...")
     print(f"📊 Training config: epochs={cfg.train.num_epochs}, batch_size={cfg.train.batch_size}")
     history = fit(
         sde=sde, 
@@ -587,32 +578,26 @@ def main(cfg: DictConfig) -> None:
     print("🚀 Starting main function...")
     
     # Prelimiaries 
-    print("📊 Setting up preliminaries...")
     torch.manual_seed(cfg.run.seed)
     torch.set_default_device(torch.device(cfg.run.device))
     torch.set_default_dtype(_get_dtype(cfg))
-    print(f"✅ Preliminaries set: seed={cfg.run.seed}, device={cfg.run.device}, dtype={cfg.run.dtype}")
+    print(f"✅ Preliminaries set: seed={cfg.run.seed}, device={torch.get_default_device()}, dtype={torch.get_default_dtype()}")
 
     # Common terms of full and cross-validation runs 
-    print("🔧 Building frame...")
     frame = _build_frame(cfg)
     print(f"✅ Frame built: {type(frame).__name__}")
     
-    print("📦 Building dataset...")
     dataset = _build_dataset(cfg, frame=frame)
     print(f"✅ Dataset built: {type(dataset).__name__}, dim={dataset.dim}")
     
-    print("✂️ Splitting dataset...")
     train_dataset, test_dataset = split_train_test(cfg, dataset)
     print(f"✅ Dataset split")
     
-    print("🌊 Building SDE...")
     sde = _build_sde(cfg, frame.eigenvalues)
     print(f"✅ SDE built: {type(sde).__name__}")
 
     print(f"🎯 Running mode: {cfg.run.mode}")
     if cfg.run.mode == 'test':
-        print("🧪 Starting test run...")
         run_test(cfg, frame=frame, train_dataset=train_dataset, test_dataset=test_dataset, sde=sde)
         print("✅ Test run completed!")
     else:
