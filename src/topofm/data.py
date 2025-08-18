@@ -7,6 +7,7 @@ import requests
 import pandas as pd
 import scipy
 import torch
+import numpy as np
 
 from .distributions import Distribution, EmpiricalInFrame, Empirical, AnalyticInFrame
 from .coupling import Coupling
@@ -350,3 +351,46 @@ def load_earthquakes_data(data_dir: str | None = None) -> torch.Tensor:
         _V = pickle.load(f)   # eigenvectors (unused)
         GS = pickle.load(f)[:-1]   # (29 - 1, 576)
     return torch.as_tensor(GS)
+
+
+
+"""
+Ocean dataset
+"""
+
+def load_ocean_eigenpairs(data_dir: str | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+    with open(os.path.join(data_dir, 'pacific_data1.pkl'), 'rb') as f:
+        laplacian, eigenvectors, eigenvalues, (b1, b2), y = pickle.load(f)
+    return torch.as_tensor(eigenvectors), torch.as_tensor(eigenvalues)
+
+
+def load_ocean_data(data_dir: str | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+    with open(os.path.join(data_dir, 'pacific_data1.pkl'), 'rb') as f:
+        laplacian, eigenvectors, eigenvalues, (b1, b2), y = pickle.load(f)
+        n1 =  b1.shape[0], b1.shape[1]
+        x = torch.arange(end=n1)
+    # eigenvectors, eigenvalues = eigenvectors[:,:n_eigs], eigenvalues[:n_eigs]
+    with open(os.path.join(data_dir, 'cochain1.pkl'), 'rb') as f:
+        y = pickle.load(f)
+    return x, y
+
+
+
+"""
+Traffic dataset
+"""
+# data_dir = 'datasets/traffic/PEMSD4_'
+
+def load_traffic_data(data_dir: str | None = None) -> torch.Tensor:
+    y = np.load(os.path.join(data_dir, 'PEMSD4_edge_features_matrix.npz'))['arr_0'].squeeze()
+    return torch.as_tensor(y)
+
+
+def load_traffic_laplacian(data_dir: str | None = None) -> torch.Tensor:
+    L = np.load(os.path.join(data_dir, 'PEMSD4_hodge_Laplacian.npz'))['arr_0']
+    return torch.as_tensor(L)
+
+
+def load_traffic_b1(data_dir: str | None = None) -> torch.Tensor:
+    b1 = np.load(os.path.join(data_dir, 'PEMSD4_B1.npz'))['arr_0']
+    return torch.as_tensor(b1)

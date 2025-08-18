@@ -26,6 +26,10 @@ from ..data import (
     AnalyticToAnalyticTestLoader,
     AnalyticToEmpiricalTestLoader,
     AnalyticToEmpiricalDataset,
+    load_ocean_data,
+    load_ocean_eigenpairs,
+    load_traffic_data,
+    load_traffic_laplacian,
 )
 from ..frames import (
     Frame,
@@ -136,21 +140,35 @@ def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
         L = load_earthquakes_laplacian(data_dir=data_dir)
         assert L.device == torch.get_default_device()
         return L
+    if cfg.data.name == 'ocean':
+        # raise NotImplementedError("Ocean dataset not supported for Laplacian construction")
+        eigenvectors, eigenvalues = load_ocean_eigenpairs(data_dir=data_dir)
+        assert eigenvectors.device == torch.get_default_device(), f"Eigenvectors must be on device {torch.get_default_device()}, got {eigenvectors.device}"
+        assert eigenvalues.device == torch.get_default_device(), f"Eigenvalues must be on device {torch.get_default_device()}, got {eigenvalues.device}"
+        return eigenvectors, eigenvalues
+
+    if cfg.data.name == 'traffic':
+        L = load_traffic_laplacian(data_dir=data_dir)
+        assert L.device == torch.get_default_device()
+        return L
+
     raise ValueError(f"Unsupported tensor dataset name: {cfg.data.name}")
 
 
 def _build_frame(cfg: DictConfig) -> torch.Tensor:
-    print(f"🔧 Building frame: name={cfg.frame.name}")
-    
     if cfg.frame.name == 'standard':
-        print("📐 Creating StandardFrame...")
         frame = StandardFrame()
         print("✅ StandardFrame created")
         return frame
+
+    if cfg.frame.name == 'spectral' and cfg.data.name == 'ocean':
+        eigenvectors, eigenvalues = _build_laplacian(cfg)
+        print(f"✅ Eigenvectors loaded: shape={eigenvectors.shape}")
+        frame = SpectralFrame(eigenvalues=eigenvalues, eigenvectors=eigenvectors)
+        print("✅ SpectralFrame created")
+        return frame
     
-    if cfg.frame.name == 'spectral':
-        print("🌊 Creating SpectralFrame...")
-        print("🔍 Loading laplacian...")
+    if cfg.frame.name == 'spectral' and cfg.data.name != 'ocean':    
         L = _build_laplacian(cfg)
         print(f"✅ Laplacian loaded: shape={L.shape}")
         frame = SpectralFrame(L)
@@ -243,6 +261,39 @@ def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
         # mu0 = AnalyticInFrame(mu0, frame)
 
         assert mu0.sample((1, )).device == mu1.sample((1, )).device == torch.get_default_device()
+
+        dataset = AnalyticToEmpiricalDataset(mu0, mu1)
+        print(f"✅ Dataset created: {type(dataset).__name__}")
+        return dataset
+
+    if cfg.data.name == 'ocean':
+        print("📊 Creating Ocean dataset...")
+        x, y = load_ocean_data(data_dir=data_dir)
+        print(f"✅ Ocean data loaded: x shape={x.shape}, y shape={y.shape}")
+        mu0, mu1 = Empirical(x), Empirical(y)
+
+        mu0, mu1 = EmpiricalInFrame(mu0, frame), EmpiricalInFrame(mu1, frame)
+        print("✅ Wrapped Empirical distributions in EmpiricalInFrame")
+
+        dataset = EmpiricalToEmpiricalDataset(mu0, mu1)
+        print(f"✅ Dataset created: {type(dataset).__name__}")
+        return dataset
+
+    if cfg.data.name == 'traffic':
+        print("📊 Creating Traffic dataset...")
+        x1 = load_traffic_data(data_dir=data_dir)
+        mu1 = Empirical(x1)
+        mu1 = EmpiricalInFrame(mu1, frame)
+        
+        mu0_mean = torch.zeros(x1.shape[-1:])
+        if cfg.data.gaussian_std == 'from_data':
+            mu0_std = torch.std(x1, dim=0)
+        else:
+            mu0_std = torch.full_like(mu0_mean, cfg.data.gaussian_std)
+
+        mu0 = torch.distributions.Normal(mu0_mean, mu0_std)
+        mu0 = torch.distributions.Independent(mu0, 1)
+        print("✅ Normal distribution created")
 
         dataset = AnalyticToEmpiricalDataset(mu0, mu1)
         print(f"✅ Dataset created: {type(dataset).__name__}")
@@ -441,7 +492,7 @@ def split_train_test(cfg: DictConfig, dataset: MatchingDataset) -> tuple[Matchin
     if cfg.data.name == 'earthquakes':
         return dataset, dataset
     
-    if cfg.data.name == 'brain':
+    if cfg.data.name in ['brain', 'traffic']:
         return dataset.train_test_split(cfg.test.ratio)
 
     if cfg.data.name == 'gaussians_to_moons':
@@ -455,10 +506,10 @@ def split_train_validation(cfg: DictConfig, dataset: MatchingDataset) -> tuple[M
         return dataset, None
     assert 1 >= cfg.validation.ratio >= 0, "Validation ratio must be between 0 and 1 if validation is enabled"
 
-    if cfg.data.name == 'earthquakes':
+    if cfg.data.name in 'earthquakes':
         return dataset, dataset
     
-    if cfg.data.name == 'brain':
+    if cfg.data.name in ['brain', 'traffic']:
         return dataset.train_test_split(cfg.validation.ratio)
 
     if cfg.data.name == 'gaussians_to_moons':

@@ -1,0 +1,5 @@
+name: traffic
+task: analytic_to_empirical
+test_size: 0.2
+gaussian_std: from_data
+dir: datasets/traffic/
