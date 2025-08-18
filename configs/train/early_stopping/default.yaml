@@ -1,5 +1,5 @@
 enabled: true
-patience: 5
+patience: 10
 metric_name: "W2"
-min_delta: 0.0  # % relative improvement
+min_delta: 0.01  # % relative improvement
 mode: "min"

@@ -394,3 +394,23 @@ def load_traffic_laplacian(data_dir: str | None = None) -> torch.Tensor:
 def load_traffic_b1(data_dir: str | None = None) -> torch.Tensor:
     b1 = np.load(os.path.join(data_dir, 'PEMSD4_B1.npz'))['arr_0']
     return torch.as_tensor(b1)
+
+
+
+"""
+Single-cell dataset
+"""
+SINGLE_CELL_URL = "https://data.mendeley.com/public-files/datasets/hhny5ff7yj/files/d82698f4-d143-442f-9a41-10be8ad02584/file_downloaded"
+
+
+def download_single_cell_data(data_dir: str | None = None):
+    """
+    The single-cell dataset is the ebdata_v3.h5ad file.
+    """
+    os.makedirs(data_dir, exist_ok=True)
+    response = requests.get(SINGLE_CELL_URL, timeout=60)
+    response.raise_for_status()
+    with open(os.path.join(data_dir, 'ebdata_v3.h5ad'), 'wb') as f:
+        f.write(response.content)
+    print(f"Downloaded single-cell data to {data_dir}")
+    
