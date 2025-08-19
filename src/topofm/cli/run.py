@@ -32,6 +32,8 @@ from ..data import (
     load_traffic_laplacian,
     load_single_cell_true_times,
     load_single_cell_phate,
+    load_single_cell_eigenpairs,
+    load_single_cell_data,
 )
 from ..frames import (
     Frame,
@@ -86,10 +88,6 @@ from ..plotting import (
     plot_history,
     plot_single_cell_predictions,
 )
-from ..utils import (
-    single_cell_to_times,
-    single_cell_to_phate,
-)
 
 from ..wandb_logger import WandBLogger
 from hydra.utils import to_absolute_path
@@ -131,6 +129,15 @@ def _setup_wandb(cfg: DictConfig):
     return wandb.run
 
 
+def _build_laplacian_eigenpairs(cfg: DictConfig) -> tuple[torch.Tensor, torch.Tensor]:
+    data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
+    if cfg.data.name == 'ocean':
+        return load_ocean_eigenpairs(data_dir=data_dir)
+    if cfg.data.name == 'single_cell':
+        return load_single_cell_eigenpairs(data_dir=data_dir)
+    raise ValueError(f"Unsupported dataset: {cfg.data.name}")
+
+
 def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
     data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
     if cfg.data.name == 'brain':
@@ -150,12 +157,8 @@ def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
         L = load_earthquakes_laplacian(data_dir=data_dir)
         assert L.device == torch.get_default_device()
         return L
-    if cfg.data.name == 'ocean':
-        # raise NotImplementedError("Ocean dataset not supported for Laplacian construction")
-        eigenvectors, eigenvalues = load_ocean_eigenpairs(data_dir=data_dir)
-        assert eigenvectors.device == torch.get_default_device(), f"Eigenvectors must be on device {torch.get_default_device()}, got {eigenvectors.device}"
-        assert eigenvalues.device == torch.get_default_device(), f"Eigenvalues must be on device {torch.get_default_device()}, got {eigenvalues.device}"
-        return eigenvectors, eigenvalues
+    if cfg.data.name in ['ocean', 'single_cell']:
+        return _build_laplacian_eigenpairs(cfg)
 
     if cfg.data.name == 'traffic':
         L = load_traffic_laplacian(data_dir=data_dir)
@@ -171,7 +174,7 @@ def _build_frame(cfg: DictConfig) -> torch.Tensor:
         print("✅ StandardFrame created")
         return frame
 
-    if cfg.frame.name == 'spectral' and cfg.data.name == 'ocean':
+    if cfg.frame.name == 'spectral' and cfg.data.name in ['ocean', 'single_cell']:
         eigenvectors, eigenvalues = _build_laplacian(cfg)
         print(f"✅ Eigenvectors loaded: shape={eigenvectors.shape}")
         frame = SpectralFrame(eigenvalues=eigenvalues, eigenvectors=eigenvectors)
@@ -306,6 +309,21 @@ def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
         print("✅ Normal distribution created")
 
         dataset = AnalyticToEmpiricalDataset(mu0, mu1)
+        print(f"✅ Dataset created: {type(dataset).__name__}")
+        return dataset
+
+    if cfg.data.name == 'single_cell':
+        print("📊 Creating Single-cell dataset...")
+        x0 = load_single_cell_data(data_dir=data_dir)
+        mu0 = Empirical(x0)
+        mu0 = EmpiricalInFrame(mu0, frame)
+
+        x1 = load_single_cell_data(data_dir=data_dir)
+        mu1 = Empirical(x1)
+        mu1 = EmpiricalInFrame(mu1, frame)
+
+        print("📦 Creating EmpiricalToEmpiricalDataset...")
+        dataset = EmpiricalToEmpiricalDataset(mu0, mu1)
         print(f"✅ Dataset created: {type(dataset).__name__}")
         return dataset
 
@@ -546,6 +564,7 @@ def _fit(
     objective: torch.nn.Module,
     early_stopping: EarlyStopping,
     wandb_logger: WandBLogger,
+    frame: Frame,
 ) -> None:
     if cfg.data.name == 'single_cell':
         true_times = load_single_cell_true_times(cfg.data.dir)
@@ -565,6 +584,7 @@ def _fit(
             objective=objective,
             early_stopping=early_stopping,
             logger=wandb_logger,
+            frame=frame,
         )
     else:
         return fit(
@@ -589,6 +609,7 @@ def _evaluate(
     model: torch.nn.Module,
     data_loader: MatchingTestLoader,
     ema: ExponentialMovingAverage,
+    frame: Frame,
 ) -> None:
 
     if cfg.data.name == 'single_cell':
@@ -601,6 +622,7 @@ def _evaluate(
             ema=ema,
             true_times=true_times,
             phate=phate,
+            frame=frame,
         )
     else:
         return evaluate(
@@ -676,6 +698,7 @@ def run_test(
         objective=objective,
         early_stopping=early_stopping,
         logger=wandb_logger,
+        frame=frame,
     )
     print("✅ Training completed!")
 
@@ -693,6 +716,7 @@ def run_test(
         model=model, 
         data_loader=test_data_loader, 
         ema=ema,
+        frame=frame,
     ) 
     print("✅ Evaluation completed!")
     print("📊 Test metrics:")

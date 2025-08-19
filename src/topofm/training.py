@@ -13,6 +13,7 @@ from .time import UniformTimeSteps
 from .data import TimeSampler, DiscreteTimeSampler, MatchingTrainLoader, MatchingTestLoader
 from .wandb_logger import WandBLogger
 from .utils import single_cell_to_times, single_cell_to_phate
+from .frames import Frame
 
 
 @dataclass
@@ -153,6 +154,7 @@ def evaluate__single_cell(
     ema: ExponentialMovingAverage,
     true_times: torch.Tensor,
     phate: torch.Tensor,
+    frame: Frame,
 ) -> dict[str, float]:
     times = [0, 1, 2, 3, 4] # TODO maybe make this a parameter
     control = ModelControl(model)
@@ -160,6 +162,7 @@ def evaluate__single_cell(
     W2 = defaultdict(float)
     for x0, x1 in data_loader:
         x1_pred = sde_solver.pushforward(x0=x0, control=control)
+        x1_pred = frame.inverse_transform(x1_pred)
         x1_pred_times = single_cell_to_times(x1_pred, true_times)
         for t in times: 
             x1_pred_phate = single_cell_to_phate(phate=phate, times=x1_pred_times, t=t)
@@ -189,6 +192,7 @@ def fit__single_cell(
     eval_data_loader: MatchingTestLoader | None = None,
     early_stopping: EarlyStopping | None = None,
     logger: WandBLogger | None = None,
+    frame: Frame | None = None,
 ) -> dict[str, torch.Tensor]:
 
     # Early stopping requires validation data
@@ -227,6 +231,7 @@ def fit__single_cell(
                 ema=ema,
                 true_times=true_times,
                 phate=phate,
+                frame=frame,
             )
         else:
             eval_metrics = {}
