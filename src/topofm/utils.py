@@ -93,4 +93,8 @@ def single_cell_to_times(x1: torch.Tensor, true_times: torch.Tensor) -> torch.Te
 
 
 def single_cell_to_phate(phate: torch.Tensor, times: torch.Tensor, *, t: int = 4) -> torch.Tensor:
-    return phate[times == t]
+    assert phate.ndim == 2, f"phate must be 2D, got {phate.ndim}D"
+    assert times.ndim == 1, f"times must be 1D, got {times.ndim}D"
+    
+    mask = (times == t) # [D]
+    return phate[mask] # [D, 2]

@@ -169,6 +169,7 @@ class Empirical(Distribution):
     def __init__(self, samples: torch.Tensor) -> None:
         super().__init__(validate_args=False)
         assert samples.ndim == 2, "`samples` should be of shape [N, D]"
+        assert samples.shape[0] > 0, f"Empirical distribution has no samples. {samples.shape=}"
         self._samples = samples
         self._batch_shape = torch.Size()
         self._event_shape = torch.Size([samples.shape[-1]])
@@ -191,6 +192,7 @@ class Empirical(Distribution):
 
     def sample(self, shape: torch.Size) -> torch.Tensor:
         assert len(shape) <= 1, "Sample shape should be (S,) or ()."
+        assert self.num_samples > 0, f"Empirical distribution has no samples. {self.samples.shape=}"
         indices = torch.randint(0, self.num_samples, shape, device=self.samples.device)
         return self.samples[indices]
 
@@ -204,13 +206,16 @@ class InFrame(Distribution):
         super().__init__(validate_args=False)
         self.frame = StandardFrame() if frame is None else frame
         self.base = base
+        self._event_shape = None # Will be computed on first access
 
     @abstractmethod
     def sample(self, shape: torch.Size) -> torch.Tensor: ... 
 
     @property
     def event_shape(self) -> torch.Size:
-        return self.base.event_shape
+        if self._event_shape is None:
+            self._event_shape = self.sample(torch.Size()).shape
+        return self._event_shape
 
 
 class EmpiricalInFrame(InFrame):
@@ -219,7 +224,6 @@ class EmpiricalInFrame(InFrame):
         super().__init__(base, frame)
         # Precompute transformed samples for efficiency
         self._base_transformed = Empirical(samples=self.frame.transform(base.samples))
-        self.base = base
 
     @property 
     def samples(self) -> torch.Tensor:

@@ -314,14 +314,17 @@ def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
 
     if cfg.data.name == 'single_cell':
         print("📊 Creating Single-cell dataset...")
-        x0 = load_single_cell_data(data_dir=data_dir)
+        x0, x1 = load_single_cell_data(data_dir=data_dir)
+        print(f"✅ Single-cell data loaded: x0 shape={x0.shape}, x1 shape={x1.shape}")
+        
         mu0 = Empirical(x0)
         mu0 = EmpiricalInFrame(mu0, frame)
-
-        x1 = load_single_cell_data(data_dir=data_dir)
+        print(f"✅ Empirical distribution created")
+        
         mu1 = Empirical(x1)
         mu1 = EmpiricalInFrame(mu1, frame)
-
+        print(f"✅ Empirical distribution created")
+        
         print("📦 Creating EmpiricalToEmpiricalDataset...")
         dataset = EmpiricalToEmpiricalDataset(mu0, mu1)
         print(f"✅ Dataset created: {type(dataset).__name__}")
@@ -451,6 +454,9 @@ def _build_test_data_loader(cfg: DictConfig, dataset: MatchingDataset) -> Matchi
 
 
 def _build_eval_data_loader(cfg: DictConfig, dataset: MatchingDataset) -> MatchingTestLoader:
+    if cfg.validation.enabled is False:
+        return None
+    
     if cfg.data.task == 'empirical_to_empirical':
         return EmpiricalToEmpiricalTestLoader(
             dataset=dataset, 
@@ -473,11 +479,12 @@ def _build_eval_data_loader(cfg: DictConfig, dataset: MatchingDataset) -> Matchi
 @torch.inference_mode()
 def _plot_predictions(cfg: DictConfig, model: torch.nn.Module, sde_solver: SDESolver, dataset: MatchingDataset, frame: Frame, wandb_run = None) -> None:
     if cfg.data.name == 'single_cell':
+        data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
         control = ModelControl(model)
         x0 = dataset.mu0.sample((1, ))
         x1_pred = sde_solver.pushforward(x0=x0, control=control)
-        x1_pred = frame.inverse_transform(x1_pred)        
-        fig, axs = plot_single_cell_predictions(x1_pred)
+        x1_pred = frame.inverse_transform(x1_pred)[0] # [D]
+        fig, axs = plot_single_cell_predictions(x1_pred, data_dir=data_dir)
     elif cfg.data.name == 'gaussians_to_moons':
         # Predict 
         control = ModelControl(model)
@@ -521,10 +528,10 @@ def split_train_test(cfg: DictConfig, dataset: MatchingDataset) -> tuple[Matchin
         return dataset, None
     assert 1 >= cfg.test.ratio >= 0, "Test ratio must be between 0 and 1 if test is enabled"
 
-    if cfg.data.name == 'earthquakes':
+    if cfg.data.name in ['earthquakes', 'single_cell']:
         return dataset, dataset
     
-    if cfg.data.name in ['brain', 'traffic', 'single_cell']:
+    if cfg.data.name in ['brain', 'traffic']:
         return dataset.train_test_split(cfg.test.ratio)
 
     if cfg.data.name == 'gaussians_to_moons':
@@ -538,10 +545,10 @@ def split_train_validation(cfg: DictConfig, dataset: MatchingDataset) -> tuple[M
         return dataset, None
     assert 1 >= cfg.validation.ratio >= 0, "Validation ratio must be between 0 and 1 if validation is enabled"
 
-    if cfg.data.name in 'earthquakes':
+    if cfg.data.name in ['earthquakes', 'single_cell']:
         return dataset, dataset
     
-    if cfg.data.name in ['brain', 'traffic', 'single_cell']:
+    if cfg.data.name in ['brain', 'traffic']:
         return dataset.train_test_split(cfg.validation.ratio)
 
     if cfg.data.name == 'gaussians_to_moons':
@@ -567,8 +574,9 @@ def _fit(
     frame: Frame,
 ) -> None:
     if cfg.data.name == 'single_cell':
-        true_times = load_single_cell_true_times(cfg.data.dir)
-        phate = load_single_cell_phate(cfg.data.dir)
+        data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
+        true_times = load_single_cell_true_times(data_dir=data_dir)
+        phate = load_single_cell_phate(data_dir=data_dir)
         return fit__single_cell(
             sde=sde,
             model=model,
@@ -613,8 +621,9 @@ def _evaluate(
 ) -> None:
 
     if cfg.data.name == 'single_cell':
-        true_times = load_single_cell_true_times(cfg.data.dir)
-        phate = load_single_cell_phate(cfg.data.dir)
+        data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
+        true_times = load_single_cell_true_times(data_dir=data_dir)
+        phate = load_single_cell_phate(data_dir=data_dir)
         return evaluate__single_cell(
             sde_solver=sde_solver,
             model=model,
@@ -656,7 +665,7 @@ def run_test(
     objective = _build_objective(cfg)
     print(f"✅ Objective built: {type(objective).__name__}")
 
-    train_dataset, eval_dataset = train_dataset.train_test_split(cfg.validation.ratio)
+    train_dataset, eval_dataset = split_train_validation(cfg, train_dataset)
     print(f"✅ Train/eval split")
 
     train_data_loader = _build_train_data_loader(cfg, dataset=train_dataset, sde=sde)
@@ -685,19 +694,19 @@ def run_test(
         print("ℹ️ W&B logging disabled")
 
     print(f"📊 Training config: epochs={cfg.train.num_epochs}, batch_size={cfg.train.batch_size}")
-    history = fit(
+    history = _fit(
+        cfg=cfg,
         sde=sde, 
         model=model, 
         train_data_loader=train_data_loader,
         eval_data_loader=eval_data_loader,
         time_sampler=time_sampler,
-        num_epochs=cfg.train.num_epochs,
         sde_solver=sde_solver, 
         optimizer=optimizer,
         ema=ema,
         objective=objective,
         early_stopping=early_stopping,
-        logger=wandb_logger,
+        wandb_logger=wandb_logger,
         frame=frame,
     )
     print("✅ Training completed!")

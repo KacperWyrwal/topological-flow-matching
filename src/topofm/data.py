@@ -145,6 +145,7 @@ class MatchingTrainLoader:
         self.batch_size = batch_size
         self.epoch_size = epoch_size
         self.num_batches, res = divmod(epoch_size, self.batch_size)
+        assert self.num_batches > 0, f"Number of batches must be greater than 0. Got {self.batch_size} and {self.epoch_size}"
         # TODO 
 
     def __iter__(self):
@@ -428,8 +429,8 @@ def load_single_cell_eigenpairs(data_dir: str | None = None) -> tuple[torch.Tens
 
 
 def load_single_cell_true_times(data_dir: str | None = None) -> torch.Tensor:
-    return np.load(os.path.join(data_dir, 'label.npy'))
+    return torch.as_tensor(np.load(os.path.join(data_dir, 'label.npy')))
 
 
 def load_single_cell_phate(data_dir: str | None = None) -> torch.Tensor:
-    return np.load(os.path.join(data_dir, 'coord.npy'))
+    return torch.as_tensor(np.load(os.path.join(data_dir, 'coord.npy')))
