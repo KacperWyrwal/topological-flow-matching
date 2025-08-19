@@ -84,3 +84,13 @@ def as_tensors(
     return tuple(torch.as_tensor(arg, dtype=dtype, device=device) for arg in args)
 
 
+"""
+Single-cell utils
+"""
+
+def single_cell_to_times(x1: torch.Tensor, true_times: torch.Tensor) -> torch.Tensor:
+    return true_times[torch.argsort(x1)]
+
+
+def single_cell_to_phate(phate: torch.Tensor, times: torch.Tensor, *, t: int = 4) -> torch.Tensor:
+    return phate[times == t]

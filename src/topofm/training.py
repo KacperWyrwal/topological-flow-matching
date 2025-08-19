@@ -12,6 +12,7 @@ from .sde import SDE
 from .time import UniformTimeSteps
 from .data import TimeSampler, DiscreteTimeSampler, MatchingTrainLoader, MatchingTestLoader
 from .wandb_logger import WandBLogger
+from .utils import single_cell_to_times, single_cell_to_phate
 
 
 @dataclass
@@ -141,6 +142,120 @@ def evaluate(
     W1 /= data_loader.num_batches
     W2 /= data_loader.num_batches
     return {"W1": W1, "W2": W2}
+
+
+@torch.inference_mode()
+def evaluate__single_cell(
+    *,
+    sde_solver: SDESolver,
+    model: torch.nn.Module,
+    data_loader: MatchingTestLoader,
+    ema: ExponentialMovingAverage,
+    true_times: torch.Tensor,
+    phate: torch.Tensor,
+) -> dict[str, float]:
+    times = [0, 1, 2, 3, 4] # TODO maybe make this a parameter
+    control = ModelControl(model)
+    W1 = defaultdict(float)
+    W2 = defaultdict(float)
+    for x0, x1 in data_loader:
+        x1_pred = sde_solver.pushforward(x0=x0, control=control)
+        x1_pred_times = single_cell_to_times(x1_pred, true_times)
+        for t in times: 
+            x1_pred_phate = single_cell_to_phate(phate=phate, times=x1_pred_times, t=t)
+            W1[t] += wasserstein_distance(x0=x1_pred_phate, x1=phate, p=1).item()
+            W2[t] += wasserstein_distance(x0=x1_pred_phate, x1=phate, p=2).item()
+
+    for t in times:
+        W1[t] /= data_loader.num_batches
+        W2[t] /= data_loader.num_batches
+    return {f"W1_{t}": W1[t] for t in times}, {f"W2_{t}": W2[t] for t in times}
+
+
+
+def fit__single_cell(
+    sde: SDE,
+    model: torch.nn.Module,
+    train_data_loader: MatchingTrainLoader,
+    true_times: torch.Tensor,
+    phate: torch.Tensor,
+    *,
+    num_epochs: int,
+    time_sampler: TimeSampler | None = None,
+    sde_solver: SDESolver | None = None,
+    optimizer: torch.optim.Optimizer | None = None,
+    ema: ExponentialMovingAverage | None = None,
+    objective: torch.nn.Module | None = None,
+    eval_data_loader: MatchingTestLoader | None = None,
+    early_stopping: EarlyStopping | None = None,
+    logger: WandBLogger | None = None,
+) -> dict[str, torch.Tensor]:
+
+    # Early stopping requires validation data
+    assert early_stopping is None or eval_data_loader is not None, "Early stopping requires eval_data_loader"
+    
+    if optimizer is None:
+        optimizer = make_optimizer(model)
+    if ema is None:
+        ema = make_ema(model)
+    if objective is None:
+        objective = make_objective()
+    if sde_solver is None:
+        sde_solver = make_sde_solver(sde)
+    if time_sampler is None:
+        time_sampler = make_time_sampler()
+
+    history = defaultdict(list)
+    pbar = tqdm.trange(num_epochs, desc="Epochs")
+    for epoch in pbar:
+        # Training epoch
+        avg_loss = train(
+            sde=sde,
+            model=model,
+            data_loader=train_data_loader,
+            optimizer=optimizer,
+            ema=ema,
+            objective=objective,
+            time_sampler=time_sampler,
+        )
+        # Validation epoch
+        if eval_data_loader is not None:
+            eval_metrics = evaluate__single_cell(
+                sde_solver=sde_solver,
+                model=model,
+                data_loader=eval_data_loader,
+                ema=ema,
+                true_times=true_times,
+                phate=phate,
+            )
+        else:
+            eval_metrics = {}
+
+        # Bookkeeping
+        metrics = {
+            "loss": avg_loss,
+            **eval_metrics,
+        }
+        for k, v in metrics.items():
+            history[k].append(v)    
+        pbar.set_postfix(metrics)
+
+        # Log to W&B via logger if enabled (scalars + curves)
+        if logger is not None and logger.is_enabled():
+            logger.log_training(epoch=epoch, loss=avg_loss, eval_metrics=eval_metrics, history=history)
+
+        # Early stopping
+        if (
+            early_stopping is not None 
+            and early_stopping.update(metrics, model) is True
+        ):
+            print(f"Early stopping triggered after {epoch + 1} epochs")
+            assert early_stopping.best_params is not None, "Early stopping should always have best_params when used"
+            early_stopping.restore_best(model)
+            break
+    return history
+
+
 
 
 def fit(

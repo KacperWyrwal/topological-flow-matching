@@ -414,3 +414,22 @@ def download_single_cell_data(data_dir: str | None = None):
         f.write(response.content)
     print(f"Downloaded single-cell data to {data_dir}")
     
+
+def load_single_cell_data(data_dir: str | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+    x0 = np.load(os.path.join(data_dir, 'mu0.npy'))
+    x1 = np.load(os.path.join(data_dir, 'mu4.npy'))
+    return torch.as_tensor(x0), torch.as_tensor(x1)
+
+
+def load_single_cell_eigenpairs(data_dir: str | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+    eigenvectors = np.load(os.path.join(data_dir, 'L_eigenvectors.npy'))
+    eigenvalues = np.load(os.path.join(data_dir, 'L_eigenvalues.npy'))
+    return torch.as_tensor(eigenvectors), torch.as_tensor(eigenvalues)
+
+
+def load_single_cell_true_times(data_dir: str | None = None) -> torch.Tensor:
+    return np.load(os.path.join(data_dir, 'label.npy'))
+
+
+def load_single_cell_phate(data_dir: str | None = None) -> torch.Tensor:
+    return np.load(os.path.join(data_dir, 'coord.npy'))

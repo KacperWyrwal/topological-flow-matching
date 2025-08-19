@@ -1,0 +1,4 @@
+name: single_cell
+task: empirical_to_empirical
+test_size: 0.2
+dir: datasets/single_cell

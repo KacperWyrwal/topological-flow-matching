@@ -30,6 +30,8 @@ from ..data import (
     load_ocean_eigenpairs,
     load_traffic_data,
     load_traffic_laplacian,
+    load_single_cell_true_times,
+    load_single_cell_phate,
 )
 from ..frames import (
     Frame,
@@ -71,6 +73,8 @@ from ..training import (
     fit, 
     evaluate,
     EarlyStopping,
+    fit__single_cell,
+    evaluate__single_cell,
 )
 
 from ..control import (
@@ -80,7 +84,13 @@ from ..control import (
 from ..plotting import (
     plot_2d_predictions,
     plot_history,
+    plot_single_cell_predictions,
 )
+from ..utils import (
+    single_cell_to_times,
+    single_cell_to_phate,
+)
+
 from ..wandb_logger import WandBLogger
 from hydra.utils import to_absolute_path
 
@@ -444,9 +454,13 @@ def _build_eval_data_loader(cfg: DictConfig, dataset: MatchingDataset) -> Matchi
 
 @torch.inference_mode()
 def _plot_predictions(cfg: DictConfig, model: torch.nn.Module, sde_solver: SDESolver, dataset: MatchingDataset, frame: Frame, wandb_run = None) -> None:
-    if cfg.data.name == 'brain':
-        pass 
-    if cfg.data.name == 'gaussians_to_moons':
+    if cfg.data.name == 'single_cell':
+        control = ModelControl(model)
+        x0 = dataset.mu0.sample((1, ))
+        x1_pred = sde_solver.pushforward(x0=x0, control=control)
+        x1_pred = frame.inverse_transform(x1_pred)        
+        fig, axs = plot_single_cell_predictions(x1_pred)
+    elif cfg.data.name == 'gaussians_to_moons':
         # Predict 
         control = ModelControl(model)
         x0, x1 = dataset.sample((cfg.plot.predictions.num_samples, )) # TODO add to config 
@@ -455,19 +469,19 @@ def _plot_predictions(cfg: DictConfig, model: torch.nn.Module, sde_solver: SDESo
 
         # Plot
         fig, ax = plot_2d_predictions(t=t, xt=xt, x0=x0, x1=x1)
-
-        # Save 
-        full_name = cfg.plot.predictions.name + ".png"
-        full_path = os.path.join(cfg.plot.predictions.dir, full_name)
-        os.makedirs(cfg.plot.predictions.dir, exist_ok=True)
-        fig.savefig(full_path, dpi=300, bbox_inches='tight')
-        plt.close(fig)
-        
-        # Log to W&B if enabled
-        if cfg.plot.predictions.log_to_wandb and wandb_run is not None:
-            wandb_run.log({"predictions": wandb.Image(str(full_path))})
-        return
-    raise ValueError(f"Dataset {cfg.data.name} not supported.") 
+    else:
+        raise ValueError(f"Dataset {cfg.data.name} not supported.")
+    # Save 
+    full_name = cfg.plot.predictions.name + ".png"
+    full_path = os.path.join(cfg.plot.predictions.dir, full_name)
+    os.makedirs(cfg.plot.predictions.dir, exist_ok=True)
+    fig.savefig(full_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    
+    # Log to W&B if enabled
+    if cfg.plot.predictions.log_to_wandb and wandb_run is not None:
+        wandb_run.log({"predictions": wandb.Image(str(full_path))})
+    return
 
 
 def _plot_history(cfg: DictConfig, history: dict[str, list[float]], wandb_run = None) -> None:
@@ -492,7 +506,7 @@ def split_train_test(cfg: DictConfig, dataset: MatchingDataset) -> tuple[Matchin
     if cfg.data.name == 'earthquakes':
         return dataset, dataset
     
-    if cfg.data.name in ['brain', 'traffic']:
+    if cfg.data.name in ['brain', 'traffic', 'single_cell']:
         return dataset.train_test_split(cfg.test.ratio)
 
     if cfg.data.name == 'gaussians_to_moons':
@@ -509,12 +523,92 @@ def split_train_validation(cfg: DictConfig, dataset: MatchingDataset) -> tuple[M
     if cfg.data.name in 'earthquakes':
         return dataset, dataset
     
-    if cfg.data.name in ['brain', 'traffic']:
+    if cfg.data.name in ['brain', 'traffic', 'single_cell']:
         return dataset.train_test_split(cfg.validation.ratio)
 
     if cfg.data.name == 'gaussians_to_moons':
         return dataset.train_test_split(cfg.validation.ratio)
     
+    raise ValueError(f"Unknown dataset: {cfg.data.name}")
+
+
+def _fit(
+    cfg: DictConfig, 
+    *,
+    sde: SDE,
+    model: torch.nn.Module,
+    train_data_loader: MatchingTrainLoader,
+    eval_data_loader: MatchingTestLoader,
+    time_sampler: TimeSampler,
+    sde_solver: SDESolver,
+    optimizer: torch.optim.Optimizer,
+    ema: ExponentialMovingAverage,
+    objective: torch.nn.Module,
+    early_stopping: EarlyStopping,
+    wandb_logger: WandBLogger,
+) -> None:
+    if cfg.data.name == 'single_cell':
+        true_times = load_single_cell_true_times(cfg.data.dir)
+        phate = load_single_cell_phate(cfg.data.dir)
+        return fit__single_cell(
+            sde=sde,
+            model=model,
+            true_times=true_times,
+            phate=phate,
+            train_data_loader=train_data_loader,
+            eval_data_loader=eval_data_loader,
+            time_sampler=time_sampler,
+            num_epochs=cfg.train.num_epochs,
+            sde_solver=sde_solver, 
+            optimizer=optimizer,
+            ema=ema,
+            objective=objective,
+            early_stopping=early_stopping,
+            logger=wandb_logger,
+        )
+    else:
+        return fit(
+            sde=sde,
+            model=model,
+            train_data_loader=train_data_loader,
+            eval_data_loader=eval_data_loader,
+            time_sampler=time_sampler,
+            num_epochs=cfg.train.num_epochs,
+            sde_solver=sde_solver, 
+            optimizer=optimizer,
+            ema=ema,
+            objective=objective,
+            early_stopping=early_stopping,
+            logger=wandb_logger,
+        )
+
+
+def _evaluate(
+    cfg: DictConfig,
+    sde_solver: SDESolver,
+    model: torch.nn.Module,
+    data_loader: MatchingTestLoader,
+    ema: ExponentialMovingAverage,
+) -> None:
+
+    if cfg.data.name == 'single_cell':
+        true_times = load_single_cell_true_times(cfg.data.dir)
+        phate = load_single_cell_phate(cfg.data.dir)
+        return evaluate__single_cell(
+            sde_solver=sde_solver,
+            model=model,
+            data_loader=data_loader,
+            ema=ema,
+            true_times=true_times,
+            phate=phate,
+        )
+    else:
+        return evaluate(
+            sde_solver=sde_solver,
+            model=model,
+            data_loader=data_loader,
+            ema=ema,
+        )
     raise ValueError(f"Unknown dataset: {cfg.data.name}")
 
 
@@ -593,7 +687,8 @@ def run_test(
         print("ℹ️ Not plotting training history (disabled in config).")
 
     print("🧪 Starting evaluation...")
-    test_metrics = evaluate(
+    test_metrics = _evaluate(
+        cfg=cfg,
         sde_solver=sde_solver, 
         model=model, 
         data_loader=test_data_loader, 

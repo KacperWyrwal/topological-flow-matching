@@ -1,8 +1,12 @@
 import numpy as np
 import torch
+import pandas as pd 
 from matplotlib import pyplot as plt
 from matplotlib.collections import LineCollection
-import plotly.graph_objects as go
+import scanpy as sc
+import os 
+from anndata import AnnData
+from .utils import single_cell_to_times
 
 
 def plot_trajectory(
@@ -162,3 +166,81 @@ def plot_2d_predictions(
     plot_samples(x1, t=1.0, ax=ax)
     plot_samples(xt[:, -1], color='green', label='predicted', ax=ax)
     return fig, ax
+
+
+
+"""
+single cell plotting, maybe move to run 
+"""
+
+def as_ndarray(x) -> np.ndarray:
+    if isinstance(x, torch.Tensor):
+        return x.cpu().numpy()
+    else:
+        return np.asarray(x)
+
+
+def _plot_single_cell_data(
+    sample_labels: pd.Categorical,
+    X_phate: np.ndarray,
+    *, 
+    ax: plt.Axes | None = None,
+    show_legend: bool = False,
+    title: str | None = None,
+) -> None:
+    adata = AnnData(X=X_phate)
+    adata.obsm["X_phate"] = X_phate
+    adata.obs["sample_labels"] = sample_labels
+    
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(10, 4))
+    else:
+        fig = ax.get_figure()
+
+    sc.pl.scatter(
+        adata,
+        basis="phate",
+        color="sample_labels",
+        ax=ax,
+        show=False,
+        title=title, 
+        legend_loc="none" if not show_legend else "right margin",
+    )
+    
+    return fig, ax
+
+
+def plot_single_cell_predictions(
+    x1_pred: torch.Tensor,
+    *, 
+    data_dir: str = './', 
+) -> None:
+    adata = sc.read_h5ad(os.path.join(data_dir, "ebdata_v3.h5ad"))
+    X_phate = adata.obsm["X_phate"]
+    sample_labels = adata.obs["sample_labels"].values
+    
+    # Create the predictions dataset
+    times_pred = single_cell_to_times(
+        x1_pred, 
+        torch.as_tensor(adata.obs["sample_labels"].cat.codes.values),
+    )
+    sample_labels_pred = pd.Categorical.from_codes(
+        times_pred, 
+        categories=adata.obs['sample_labels'].cat.categories,
+    )
+
+    fig, axs = plt.subplots(1, 2, figsize=(10, 4))
+    _plot_single_cell_data(
+        sample_labels=sample_labels_pred,
+        X_phate=X_phate,
+        ax=axs[0],
+        title="Predicted",
+    )
+    _plot_single_cell_data(
+        sample_labels=sample_labels,
+        X_phate=X_phate,
+        ax=axs[1],
+        show_legend=True,
+        title="True",
+    )
+    return fig, axs
