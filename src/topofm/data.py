@@ -356,8 +356,7 @@ Ocean dataset
 """
 def load_ocean_eigenpairs(data_dir: str | None = None) -> dict[str, torch.Tensor]:
     res = torch.load(os.path.join(data_dir, 'ocean_hodge_basis.pt'))
-    res = res.to(torch.get_default_device())
-    res = res.to(torch.get_default_dtype())
+    res = {k: v.to(device=torch.get_default_device(), dtype=torch.get_default_dtype()) for k, v in res.items()}
     return res
 
 
