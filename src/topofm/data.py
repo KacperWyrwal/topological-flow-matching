@@ -355,7 +355,11 @@ def load_earthquakes_data(data_dir: str | None = None) -> torch.Tensor:
 Ocean dataset
 """
 def load_ocean_eigenpairs(data_dir: str | None = None) -> dict[str, torch.Tensor]:
-    return torch.load(os.path.join(data_dir, 'ocean_hodge_basis.pt'))
+    res = torch.load(os.path.join(data_dir, 'ocean_hodge_basis.pt'))
+    res = res.to(torch.get_default_device())
+    res = res.to(torch.get_default_dtype())
+    return res
+
 
 
 """
