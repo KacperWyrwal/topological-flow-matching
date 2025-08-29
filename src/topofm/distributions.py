@@ -41,9 +41,9 @@ class EdgeGP(Distribution):
         self.gp_type = gp_type
 
         # Harmonic forms 
-        harm_variance = harm_sigma ** 2.0 * torch.exp(- harm_kappa ** 2.0 / 2.0 * harm_vals) # [A]
-        grad_variance = grad_sigma ** 2.0 * torch.exp(- grad_kappa ** 2.0 / 2.0 * grad_vals) # [B]
-        curl_variance = curl_sigma ** 2.0 * torch.exp(- curl_kappa ** 2.0 / 2.0 * curl_vals) # [C]
+        harm_variance = harm_sigma * torch.exp(- harm_kappa ** 2.0 / 2.0 * harm_vals) # [A]
+        grad_variance = grad_sigma * torch.exp(- grad_kappa ** 2.0 / 2.0 * grad_vals) # [B]
+        curl_variance = curl_sigma * torch.exp(- curl_kappa ** 2.0 / 2.0 * curl_vals) # [C]
 
         # Reshape eigenvalues and spectral variance
         self.spectral_variance = torch.concat([harm_variance, grad_variance, curl_variance], dim=0) # [A + B + C]
