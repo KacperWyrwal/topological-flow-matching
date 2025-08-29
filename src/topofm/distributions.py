@@ -47,6 +47,7 @@ class EdgeGP(Distribution):
 
         # Reshape eigenvalues and spectral variance
         self.spectral_variance = torch.concat([harm_variance, grad_variance, curl_variance], dim=0) # [A + B + C]
+        self.spectral_stddev = self.spectral_variance.sqrt()
         self.eigenvectors = torch.concat([harm_vecs, grad_vecs, curl_vecs], dim=0) # [A + B + C, D]
         
         # Shapes 
@@ -66,7 +67,7 @@ class EdgeGP(Distribution):
         returns: [..., 3M]
         """
         epsilon = torch.randn(*shape, *self._event_shape) # [..., 3M]
-        return self.spectral_variance * epsilon # [..., 3M]
+        return self.spectral_stddev * epsilon # [..., 3M]
         
     def sample_euclidean(self, shape: torch.Size):
         spectral_samples = self.sample_spectral(shape) # [..., 3M]
