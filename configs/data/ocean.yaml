@@ -1,4 +1,26 @@
 name: ocean
-task: empirical_to_empirical
+task: analytic_to_analytic
 test_size: 0.2
 dir: datasets/ocean
+num_eigenvectors: 50
+
+# Initial GP
+initial_gp:
+  type: 'diffusion'
+  harm_sigma: 1e-5
+  grad_sigma: 11.808
+  curl_sigma: 12.6
+  harm_kappa: 0.0
+  grad_kappa: 10.36
+  curl_kappa: 9.53
+
+# Terminal GP
+terminal_gp: 
+  type: 'diffusion'
+  harm_sigma: 1e-5
+  grad_sigma: 1.0
+  curl_sigma: 1e-5
+  harm_kappa: 0.0
+  grad_kappa: 10.0
+  curl_kappa: 0.0
+

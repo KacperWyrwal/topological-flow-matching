@@ -27,6 +27,7 @@ from .distributions import (
     InFrame,
     EmpiricalInFrame, 
     AnalyticInFrame,
+    EdgeGP,
 )
 from .frames import (
     Frame, 
@@ -61,6 +62,7 @@ from .data import (
     download_brain_regions_centroids,
     load_earthquakes_data,
     load_earthquakes_laplacian,
+    load_ocean_eigenpairs,
 )
 from .models import (
     timestep_embedding,
@@ -123,6 +125,7 @@ __all__ = [
     "InFrame",
     "EmpiricalInFrame", 
     "AnalyticInFrame",
+    "EdgeGP",
     # frames
     "Frame",
     "SpectralFrame",
@@ -159,6 +162,7 @@ __all__ = [
     "download_brain_regions_centroids",
     "load_earthquakes_data",
     "load_earthquakes_laplacian",
+    "load_ocean_eigenpairs",
     # models
     "timestep_embedding",
     "FCs",

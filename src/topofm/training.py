@@ -132,12 +132,20 @@ def evaluate(
     model: torch.nn.Module,
     data_loader: MatchingTestLoader,
     ema: ExponentialMovingAverage,
+    frame: Frame,
 ) -> dict[str, float]:
     control = ModelControl(model)
     W1 = 0.0
     W2 = 0.0
     for x0, x1 in data_loader:
+        # Push inputs forward using model control
         x1_pred = sde_solver.pushforward(x0=x0, control=control)
+
+        # Convert to original frame, in case there is a dimensionality reduction
+        x1_pred = frame.inverse_transform(x1_pred)
+        x1 = frame.inverse_transform(x1)
+
+        # Compute Wasserstein distance 
         W1 += wasserstein_distance(x0=x1_pred, x1=x1, p=1).item()
         W2 += wasserstein_distance(x0=x1_pred, x1=x1, p=2).item()
     W1 /= data_loader.num_batches
@@ -286,6 +294,7 @@ def fit(
     eval_data_loader: MatchingTestLoader | None = None,
     early_stopping: EarlyStopping | None = None,
     logger: WandBLogger | None = None,
+    frame: Frame | None = None,
 ) -> dict[str, torch.Tensor]:
     # Early stopping requires validation data
     assert early_stopping is None or eval_data_loader is not None, "Early stopping requires eval_data_loader"
@@ -321,6 +330,7 @@ def fit(
                 model=model,
                 data_loader=eval_data_loader,
                 ema=ema,
+                frame=frame,
             )
         else:
             eval_metrics = {}

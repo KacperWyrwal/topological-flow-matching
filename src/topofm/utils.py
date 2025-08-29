@@ -84,6 +84,31 @@ def as_tensors(
     return tuple(torch.as_tensor(arg, dtype=dtype, device=device) for arg in args)
 
 
+import scipy 
+
+
+def scipy_csr_to_torch_sparse(csr_matrix: scipy.sparse.csr_matrix, dtype: torch.dtype | None = None, device: torch.device | None = None) -> torch.sparse_coo_tensor:
+    """
+    Convert a SciPy CSR sparse matrix to a PyTorch sparse COO tensor.
+    
+    Args:
+        csr_matrix (scipy.sparse.csr_matrix): Input CSR matrix.
+        dtype (torch.dtype): Desired dtype of the values (default: torch.float32).
+        device (str or torch.device): Target device (default: "cpu").
+    
+    Returns:
+        torch.sparse_coo_tensor: Sparse tensor in COO format.
+    """
+    coo = csr_matrix.tocoo()
+    indices = torch.tensor(
+        np.vstack((coo.row, coo.col)), dtype=torch.long, device=device
+    )
+    values = torch.tensor(coo.data, dtype=dtype, device=device)
+    shape = coo.shape
+    
+    return torch.sparse_coo_tensor(indices, values, torch.Size(shape), device=device)
+
+
 """
 Single-cell utils
 """

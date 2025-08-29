@@ -1,15 +1,24 @@
-from pandas._libs.groupby import group_cumsum
 import torch
+import math
 from abc import abstractmethod
 from torch.distributions import Distribution
 from .frames import Frame, StandardFrame
+# HodgeBasis is imported here to avoid circular import
+# from .data import HodgeBasis
 
 
 class EdgeGP(Distribution):
+    """
+    Zero-mean GP on edges of a 2-simplicial complex. 
+    """
     def __init__(
         self, 
-        eigenvalues: tuple[torch.Tensor, torch.Tensor, torch.Tensor], 
-        eigenvectors: tuple[torch.Tensor, torch.Tensor, torch.Tensor], 
+        grad_vecs: torch.Tensor,
+        curl_vecs: torch.Tensor,
+        harm_vecs: torch.Tensor,
+        grad_vals: torch.Tensor,
+        curl_vals: torch.Tensor,
+        harm_vals: torch.Tensor,
         gp_type: str = 'diffusion',
         harm_sigma: float = 1.0, 
         grad_sigma: float = 1.0, 
@@ -17,64 +26,51 @@ class EdgeGP(Distribution):
         harm_kappa: float = 1.0, 
         grad_kappa: float = 1.0, 
         curl_kappa: float = 1.0, 
-        alpha: float = 1.0,
     ):
-        self.harm_evals, self.grad_evals, self.curl_evals = eigenvalues # [M]
-        self.harm_evecs, self.grad_evecs, self.curl_evecs = eigenvectors # [M, D]
-
+        """
+        Args: 
+            harm_evals: [A]
+            grad_evals: [B]
+            curl_evals: [C]
+            harm_evecs: [A, D]
+            grad_evecs: [B, D]
+            curl_evecs: [C, D]
+            gp_type: 'diffusion'
+        """
+        super().__init__(validate_args=False)
         self.gp_type = gp_type
-        self.harm_sigma2 = harm_sigma
-        self.grad_sigma2 = grad_sigma
-        self.curl_sigma2 = curl_sigma
-        self.harm_kappa = harm_kappa
-        self.grad_kappa = grad_kappa
-        self.curl_kappa = curl_kappa
-        self.alpha = alpha
-        self._mean = torch.zeros(self.dim) # Probably set by 
 
-        self.cov_spectral = self.get_cov_spectral()
-        self.hodge_evecs = torch.cat([self.harm_evecs, self.grad_evecs, self.curl_evecs], dim=1) # [M, 3D]
+        # Harmonic forms 
+        harm_variance = harm_sigma ** 2.0 * torch.exp(- harm_kappa ** 2.0 / 2.0 * harm_vals) # [A]
+        grad_variance = grad_sigma ** 2.0 * torch.exp(- grad_kappa ** 2.0 / 2.0 * grad_vals) # [B]
+        curl_variance = curl_sigma ** 2.0 * torch.exp(- curl_kappa ** 2.0 / 2.0 * curl_vals) # [C]
 
-    @property
-    def dim(self) -> int:
-        return self.harm_evals.shape[0] # M
-    
-    def mean(self) -> torch.Tensor:
-        return self._mean
-                       
-    def get_cov_spectral(self):
-        harm_cov = self.harm_sigma2 * torch.exp(- self.harm_kappa**2/2 * self.harm_evals)
-        grad_cov = self.grad_sigma2 * torch.exp(- self.grad_kappa**2/2 * self.grad_evals)
-        curl_cov = self.curl_sigma2 * torch.exp(- self.curl_kappa**2/2 * self.curl_evals)
-        return torch.cat([harm_cov, grad_cov, curl_cov], dim=1)
-
-    def ocean_sampler_gp(self, mean, cov_spectral, hodge_evecs, sample_size):
-        '''use this to sample from the GP for initial distribution '''
-        v = torch.randn(sample_size, self.dim)
-
+        # Reshape eigenvalues and spectral variance
+        self.spectral_variance = torch.concat([harm_variance, grad_variance, curl_variance], dim=0) # [A + B + C]
+        self.eigenvectors = torch.concat([harm_vecs, grad_vecs, curl_vecs], dim=0) # [A + B + C, D]
         
-        n_spectrals = cov_spectral.shape[0]
-        v = np.random.multivariate_normal(np.zeros(n_spectrals), np.eye(n_spectrals), sample_size)
-        assert v.shape == (sample_size,) + (n_spectrals,)
-        ocean_flows = mean[:,None] + hodge_evecs @ (np.sqrt(cov_spectral)[:, None] * v.T)
-        return ocean_flows.T
-        
+        # Shapes 
+        self._batch_shape = torch.Size()
+        self._event_shape = self.spectral_variance.shape
+
     def sample(self, shape: torch.Size):
-        cov_spectral = self.cov_spectral # [M, 3M]
-        hodge_evecs = self.hodge_evecs # [M, 3D]
-        epsilon = torch.randn(*shape, self.dim) # []
-        return (
-            self.mean + 
-            self.eigenvectors @ (
-                torch.sqrt(cov_spectral) * epsilon.mT # [M, 3M] @ [3M, ]
-            )
-        )
-        return self.mean + self.eigenvectors @ (torch.sqrt(cov_spectral)[:, None] * epsilon.mT)
+        return self.sample_spectral(shape)
+
+    def sample_spectral(self, shape: torch.Size):
+        """
+        Sample spectral weights. 
+
+        Args: 
+            shape: [...]
+
+        returns: [..., 3M]
+        """
+        epsilon = torch.randn(*shape, *self._event_shape) # [..., 3M]
+        return self.spectral_variance * epsilon # [..., 3M]
         
-
-
-        ocean_samples = ocean_sampler_gp(self.mean, cov_spectral, hodge_evecs, n, if_seed)
-        return torch.Tensor(ocean_samples)
+    def sample_euclidean(self, shape: torch.Size):
+        spectral_samples = self.sample_spectral(shape) # [..., 3M]
+        return torch.einsum('md, ...m -> ...d', self.eigenvectors, spectral_samples)
 
 
 class Moons(Distribution):

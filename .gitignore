@@ -211,3 +211,6 @@ __marimo__/
 # Experiment results
 outputs/
 multirun/
+datasets/
+stripy-venv/
+uv.lock

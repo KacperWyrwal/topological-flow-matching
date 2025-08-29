@@ -26,7 +26,6 @@ from ..data import (
     AnalyticToAnalyticTestLoader,
     AnalyticToEmpiricalTestLoader,
     AnalyticToEmpiricalDataset,
-    load_ocean_data,
     load_ocean_eigenpairs,
     load_traffic_data,
     load_traffic_laplacian,
@@ -58,6 +57,7 @@ from ..distributions import (
     AnalyticInFrame,
     EightGaussians, 
     Moons,
+    EdgeGP,
 )
 from ..coupling import (
     Coupling,
@@ -174,7 +174,18 @@ def _build_frame(cfg: DictConfig) -> torch.Tensor:
         print("✅ StandardFrame created")
         return frame
 
-    if cfg.frame.name == 'spectral' and cfg.data.name in ['ocean', 'single_cell']:
+    if cfg.frame.name == 'spectral' and cfg.data.name == 'ocean':
+        eigenpairs = _build_laplacian_eigenpairs(cfg)
+        eigenvectors = torch.concat([eigenpairs['grad_vecs'], eigenpairs['curl_vecs'], eigenpairs['harm_vecs']], dim=0)
+        eigenvalues = torch.concat([eigenpairs['grad_vals'], eigenpairs['curl_vals'], eigenpairs['harm_vals']], dim=0)
+        eigenvectors = eigenvectors.mT
+        print(f"✅ Eigenvalues loaded: shape={eigenvalues.shape}")
+        print(f"✅ Eigenvectors loaded: shape={eigenvectors.shape}")
+        frame = SpectralFrame(eigenvalues=eigenvalues, eigenvectors=eigenvectors)
+        print("✅ SpectralFrame created")
+        return frame
+
+    if cfg.frame.name == 'spectral' and cfg.data.name == 'single_cell':
         eigenvectors, eigenvalues = _build_laplacian(cfg)
         print(f"✅ Eigenvectors loaded: shape={eigenvectors.shape}")
         frame = SpectralFrame(eigenvalues=eigenvalues, eigenvectors=eigenvectors)
@@ -214,7 +225,7 @@ def _build_model(cfg: DictConfig, data_dim: int) -> torch.nn.Module:
         raise ValueError(f"Unknown model: {cfg.model.name}")
 
 
-def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
+def _build_dataset(cfg: DictConfig, frame: Frame | None = None):
     print(f"🔍 Building dataset: name={cfg.data.name}, task={cfg.data.task}")
     data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
     
@@ -279,19 +290,6 @@ def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
         print(f"✅ Dataset created: {type(dataset).__name__}")
         return dataset
 
-    if cfg.data.name == 'ocean':
-        print("📊 Creating Ocean dataset...")
-        x, y = load_ocean_data(data_dir=data_dir)
-        print(f"✅ Ocean data loaded: x shape={x.shape}, y shape={y.shape}")
-        mu0, mu1 = Empirical(x), Empirical(y)
-
-        mu0, mu1 = EmpiricalInFrame(mu0, frame), EmpiricalInFrame(mu1, frame)
-        print("✅ Wrapped Empirical distributions in EmpiricalInFrame")
-
-        dataset = EmpiricalToEmpiricalDataset(mu0, mu1)
-        print(f"✅ Dataset created: {type(dataset).__name__}")
-        return dataset
-
     if cfg.data.name == 'traffic':
         print("📊 Creating Traffic dataset...")
         x1 = load_traffic_data(data_dir=data_dir)
@@ -327,6 +325,46 @@ def _build_dataset(cfg: DictConfig, frame: SpectralFrame | None = None):
         
         print("📦 Creating EmpiricalToEmpiricalDataset...")
         dataset = EmpiricalToEmpiricalDataset(mu0, mu1)
+        print(f"✅ Dataset created: {type(dataset).__name__}")
+        return dataset
+
+    if cfg.data.name == 'ocean':
+        print("📊 Creating Ocean dataset...")
+        eigenpairs = load_ocean_eigenpairs(data_dir=data_dir)
+
+        mu0 = EdgeGP(
+            grad_vecs=eigenpairs['grad_vecs'],
+            curl_vecs=eigenpairs['curl_vecs'],
+            harm_vecs=eigenpairs['harm_vecs'],
+            grad_vals=eigenpairs['grad_vals'],
+            curl_vals=eigenpairs['curl_vals'],
+            harm_vals=eigenpairs['harm_vals'],
+            gp_type=cfg.data.initial_gp.type,
+            harm_sigma=cfg.data.initial_gp.harm_sigma,
+            grad_sigma=cfg.data.initial_gp.grad_sigma,
+            curl_sigma=cfg.data.initial_gp.curl_sigma,
+            harm_kappa=cfg.data.initial_gp.harm_kappa,
+            grad_kappa=cfg.data.initial_gp.grad_kappa,
+            curl_kappa=cfg.data.initial_gp.curl_kappa,
+        )
+
+        mu1 = EdgeGP(
+            grad_vecs=eigenpairs['grad_vecs'],
+            curl_vecs=eigenpairs['curl_vecs'],
+            harm_vecs=eigenpairs['harm_vecs'],
+            grad_vals=eigenpairs['grad_vals'],
+            curl_vals=eigenpairs['curl_vals'],
+            harm_vals=eigenpairs['harm_vals'],
+            gp_type=cfg.data.terminal_gp.type,
+            harm_sigma=cfg.data.terminal_gp.harm_sigma,
+            grad_sigma=cfg.data.terminal_gp.grad_sigma,
+            curl_sigma=cfg.data.terminal_gp.curl_sigma,
+            harm_kappa=cfg.data.terminal_gp.harm_kappa,
+            grad_kappa=cfg.data.terminal_gp.grad_kappa,
+            curl_kappa=cfg.data.terminal_gp.curl_kappa,
+        )
+        
+        dataset = AnalyticToAnalyticDataset(mu0, mu1)
         print(f"✅ Dataset created: {type(dataset).__name__}")
         return dataset
 
@@ -528,7 +566,7 @@ def split_train_test(cfg: DictConfig, dataset: MatchingDataset) -> tuple[Matchin
         return dataset, None
     assert 1 >= cfg.test.ratio >= 0, "Test ratio must be between 0 and 1 if test is enabled"
 
-    if cfg.data.name in ['earthquakes', 'single_cell']:
+    if cfg.data.name in ['earthquakes', 'single_cell', 'ocean']:
         return dataset, dataset
     
     if cfg.data.name in ['brain', 'traffic']:
@@ -545,7 +583,7 @@ def split_train_validation(cfg: DictConfig, dataset: MatchingDataset) -> tuple[M
         return dataset, None
     assert 1 >= cfg.validation.ratio >= 0, "Validation ratio must be between 0 and 1 if validation is enabled"
 
-    if cfg.data.name in ['earthquakes', 'single_cell']:
+    if cfg.data.name in ['earthquakes', 'single_cell', 'ocean']:
         return dataset, dataset
     
     if cfg.data.name in ['brain', 'traffic']:
@@ -608,6 +646,7 @@ def _fit(
             objective=objective,
             early_stopping=early_stopping,
             logger=wandb_logger,
+            frame=frame,
         )
 
 
@@ -639,6 +678,7 @@ def _evaluate(
             model=model,
             data_loader=data_loader,
             ema=ema,
+            frame=frame,
         )
     raise ValueError(f"Unknown dataset: {cfg.data.name}")
 

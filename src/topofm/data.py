@@ -9,15 +9,11 @@ import scipy
 import torch
 import numpy as np
 
+# TODO it would be good do have a module for datasets, loaders, etc., and a separate for loading the data
 from .distributions import Distribution, EmpiricalInFrame, Empirical, AnalyticInFrame
 from .coupling import Coupling
 from .time import TimeSteps
-
-# Try to use Hydra to resolve absolute paths if available
-try:
-    from hydra.utils import to_absolute_path as _to_absolute_path
-except Exception:  # pragma: no cover - hydra not always present at import time
-    _to_absolute_path = None
+from .utils import scipy_csr_to_torch_sparse
 
 
 class TimeSampler(ABC):
@@ -358,23 +354,8 @@ def load_earthquakes_data(data_dir: str | None = None) -> torch.Tensor:
 """
 Ocean dataset
 """
-
-def load_ocean_eigenpairs(data_dir: str | None = None) -> tuple[torch.Tensor, torch.Tensor]:
-    with open(os.path.join(data_dir, 'pacific_data1.pkl'), 'rb') as f:
-        laplacian, eigenvectors, eigenvalues, (b1, b2), y = pickle.load(f)
-    return torch.as_tensor(eigenvectors), torch.as_tensor(eigenvalues)
-
-
-def load_ocean_data(data_dir: str | None = None) -> tuple[torch.Tensor, torch.Tensor]:
-    with open(os.path.join(data_dir, 'pacific_data1.pkl'), 'rb') as f:
-        laplacian, eigenvectors, eigenvalues, (b1, b2), y = pickle.load(f)
-        n1 =  b1.shape[0], b1.shape[1]
-        x = torch.arange(end=n1)
-    # eigenvectors, eigenvalues = eigenvectors[:,:n_eigs], eigenvalues[:n_eigs]
-    with open(os.path.join(data_dir, 'cochain1.pkl'), 'rb') as f:
-        y = pickle.load(f)
-    return x, y
-
+def load_ocean_eigenpairs(data_dir: str | None = None) -> dict[str, torch.Tensor]:
+    return torch.load(os.path.join(data_dir, 'ocean_hodge_basis.pt'))
 
 
 """

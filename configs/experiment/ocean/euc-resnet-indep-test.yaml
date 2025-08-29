@@ -4,7 +4,7 @@ defaults:
   - override /data: ocean
   - override /frame: spectral
   - override /model: residual_nn
-  - override /sde: topological_heat_bm
+  - override /sde: euclidean_heat_bm
   - override /sde_solver: euler_maruyama
   - override /train/coupling: independent
   - override /hydra/sweeper: basic
@@ -27,7 +27,7 @@ validation:
 # Plotting
 plot:
   predictions:
-  enabled: false  # 2D plot not applicable to ocean by default
+    enabled: false  # 2D plot not applicable to ocean by default
 
 hydra:
   sweeper:
@@ -42,6 +42,5 @@ run:
   use_wandb: true
   wandb:
     project: topological-flow-matching
-    # dataset, sde, coupling, mode, seed
-    tags: [ocean, topological, independent, test, seed_sweep]
+    tags: [ocean, euclidean, ot, test, seed_sweep]
     #, "${str:run.seed}"]

@@ -6,7 +6,10 @@ from matplotlib.collections import LineCollection
 import scanpy as sc
 import os 
 from anndata import AnnData
+import plotly.express as px 
+import plotly.graph_objects as go 
 from .utils import single_cell_to_times
+from .data import load_brain_regions_centroids
 
 
 def plot_trajectory(
@@ -166,6 +169,35 @@ def plot_2d_predictions(
     plot_samples(x1, t=1.0, ax=ax)
     plot_samples(xt[:, -1], color='green', label='predicted', ax=ax)
     return fig, ax
+
+
+"""
+Brain plotting
+"""
+def plot_brain_signal_3d(signal, width: int = 500, height: int = 500, marker_size: int = 5):
+    df = load_brain_regions_centroids()
+    if signal is not None:
+        df = df.assign(signal=signal.detach().cpu().numpy())
+        fig = px.scatter_3d(df, x='x', y='y', z='z', color='signal')
+    else:
+        fig = px.scatter_3d(df, x='x', y='y', z='z')
+    fig.update_traces(marker_size=marker_size)
+    fig.update_layout(width=width, height=height)
+    fig.show()
+    return fig 
+
+
+def plot_brain_signal_2d(signal, width: int = 400, height: int = 400, marker_size: int = 6):
+    df = load_brain_regions_centroids()
+    if signal is not None:
+        df = df.assign(signal=signal.detach().cpu().numpy())
+        fig = px.scatter(df, x='x', y='y', color='signal')
+    else:
+        fig = px.scatter(df, x='x', y='y')
+    fig.update_traces(marker_size=marker_size)
+    fig.update_layout(width=width, height=height)
+    fig.show()
+    return fig 
 
 
 
