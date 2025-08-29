@@ -20,9 +20,13 @@ train:
 
 test:
   ratio: 0.2
-
+  batch_size: 512 
+  epoch_size: 512
+  
 validation:
   ratio: 0.1
+  batch_size: 512 
+  epoch_size: 512
 
 # Plotting
 plot:
