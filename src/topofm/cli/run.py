@@ -275,10 +275,7 @@ def _build_dataset(cfg: DictConfig, frame: Frame | None = None):
         print(f"✅ Wrapped Empirical distribution in EmpiricalInFrame")
 
         mu0_mean = torch.zeros(x1.shape[-1:])
-        if cfg.data.gaussian_std == 'from_data':
-            mu0_std = torch.std(x1, dim=0)
-        else:
-            mu0_std = torch.full_like(mu0_mean, cfg.data.gaussian_std)
+        mu0_std = torch.full_like(mu0_mean, 1.0)
         mu0 = torch.distributions.Normal(mu0_mean, mu0_std)
         mu0 = torch.distributions.Independent(mu0, 1)
         print("✅ Normal distribution created")
@@ -297,11 +294,7 @@ def _build_dataset(cfg: DictConfig, frame: Frame | None = None):
         mu1 = EmpiricalInFrame(mu1, frame)
         
         mu0_mean = torch.zeros(x1.shape[-1:])
-        if cfg.data.gaussian_std == 'from_data':
-            mu0_std = torch.std(x1, dim=0)
-        else:
-            mu0_std = torch.full_like(mu0_mean, cfg.data.gaussian_std)
-
+        mu0_std = torch.full_like(mu0_mean, 1.0)
         mu0 = torch.distributions.Normal(mu0_mean, mu0_std)
         mu0 = torch.distributions.Independent(mu0, 1)
         print("✅ Normal distribution created")
@@ -707,6 +700,24 @@ def run_test(
 
     train_dataset, eval_dataset = split_train_validation(cfg, train_dataset)
     print(f"✅ Train/eval split")
+
+
+    if cfg.data.name in ('brain', 'earthquakes'):
+        # If we are in the generation from Gaussian case, 
+        # set the mean and standard deviation of the Gaussian 
+        # to be derived from the data
+        train_mean = train_dataset.mu1.samples.mean(dim=0)
+        train_dataset.mu0.base_dist.loc = train_mean
+        eval_dataset.mu0.base_dist.loc = train_mean
+        test_dataset.mu0.base_dist.loc = train_mean
+        print("✅ Set mu0 mean to training mean")
+
+        train_std = train_dataset.mu1.samples.std(dim=0)
+        train_dataset.mu0.base_dist.scale = train_std
+        eval_dataset.mu0.base_dist.scale = train_std
+        test_dataset.mu0.base_dist.scale = train_std
+        print("✅ Set mu0 std to training std")
+
 
     train_data_loader = _build_train_data_loader(cfg, dataset=train_dataset, sde=sde)
     print("✅ Train data loader built")
