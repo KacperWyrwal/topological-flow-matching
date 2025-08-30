@@ -1,19 +1,16 @@
 # @package _global_
 
 defaults:
-  - override /data: traffic
+  - override /data: brain
   - override /frame: spectral
   - override /model: residual_nn
-  - override /sde: euclidean_heat_bm
+  - override /sde: topological_heat_bm
   - override /sde_solver: euler_maruyama
-  - override /train/coupling: independent
+  - override /train/coupling: ot
   - override /hydra/sweeper: basic
   - _self_
 
 # Training setup
-train:
-  epoch_size: 4096
-
 test:
   ratio: 0.2
   batch_size: null
@@ -42,4 +39,4 @@ run:
   use_wandb: true
   wandb:
     project: topological-flow-matching
-    tags: [traffic, topological, ot, test]
+    tags: [brain, topological, ot]

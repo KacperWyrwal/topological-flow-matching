@@ -1,37 +1,30 @@
 # @package _global_
 
 defaults:
-  - override /data: ocean
+  - override /data: brain
   - override /frame: spectral
   - override /model: residual_nn
-  - override /sde: euclidean_heat_bm
+  - override /sde: topological_heat_bm
   - override /sde_solver: euler_maruyama
   - override /train/coupling: independent
   - override /hydra/sweeper: basic
   - _self_
 
 # Training setup
-train:
-  num_epochs: 100
-  early_stopping:
-    enabled: true
-    patience: 10
-    min_delta: 0.01
-
 test:
   ratio: 0.2
-  batch_size: 512 
-  epoch_size: 512
+  batch_size: null
+  epoch_size: null
 
 validation:
   ratio: 0.1
-  batch_size: 512 
-  epoch_size: 512
+  batch_size: null
+  epoch_size: null
 
 # Plotting
 plot:
   predictions:
-    enabled: false  # 2D plot not applicable to ocean by default
+    enabled: false  # 2D plot not applicable to brain by default
 
 hydra:
   sweeper:
@@ -46,5 +39,4 @@ run:
   use_wandb: true
   wandb:
     project: topological-flow-matching
-    tags: [ocean, euclidean, ot, test, seed_sweep]
-    #, "${str:run.seed}"]
+    tags: [brain, topological, independent]

@@ -11,13 +11,6 @@ defaults:
   - _self_
 
 # Training setup
-train:
-  num_epochs: 100
-  early_stopping:
-    enabled: true
-    patience: 10
-    min_delta: 0.05
-
 test:
   ratio: 0.2
   batch_size: null
@@ -46,5 +39,4 @@ run:
   use_wandb: true
   wandb:
     project: topological-flow-matching
-    tags: [brain, euclidean, ot, test, seed_sweep]
-    #, "${str:run.seed}"]
+    tags: [brain, euclidean, ot]
