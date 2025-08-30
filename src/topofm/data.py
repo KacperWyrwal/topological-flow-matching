@@ -254,8 +254,8 @@ def load_brain_laplacian(data_dir: str | None = None) -> torch.Tensor:
 
 
 def load_brain_data(data_dir: str | None = None) -> tuple[torch.Tensor, torch.Tensor]:
-    x1 = scipy.io.loadmat(os.path.join(data_dir, "aligned.mat"))['Xa'].T
     x0 = scipy.io.loadmat(os.path.join(data_dir, "liberal.mat"))['Xl'].T
+    x1 = scipy.io.loadmat(os.path.join(data_dir, "aligned.mat"))['Xa'].T
     return torch.as_tensor(x0), torch.as_tensor(x1)
 
 
