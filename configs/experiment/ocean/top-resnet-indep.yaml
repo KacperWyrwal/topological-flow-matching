@@ -24,7 +24,7 @@ validation:
 # Plotting
 plot:
   predictions:
-  enabled: false  # 2D plot not applicable to ocean by default
+    enabled: false  # 2D plot not applicable to ocean by default
 
 hydra:
   sweeper:

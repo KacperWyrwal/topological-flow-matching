@@ -120,7 +120,7 @@ def _setup_wandb(cfg: DictConfig):
         entity=cfg.run.wandb.entity,
         job_type=cfg.run.wandb.job_type, 
         notes=cfg.run.wandb.notes,
-        reinit=True,
+        reinit='finish_previous',
     )
 
     wandb.define_metric("epoch")
