@@ -213,4 +213,4 @@ outputs/
 multirun/
 datasets/
 stripy-venv/
-uv.lock
+uv.lockdatasets/single_cell/A.npy
