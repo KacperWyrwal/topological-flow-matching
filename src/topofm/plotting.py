@@ -254,7 +254,7 @@ def plot_single_cell_predictions(
     # Create the predictions dataset
     times_pred = single_cell_to_times(
         x1_pred, 
-        torch.as_tensor(adata.obs["sample_labels"].cat.codes.values),
+        torch.as_tensor(adata.obs["sample_labels"].cat.codes.values, device='cpu'),
     )
     sample_labels_pred = pd.Categorical.from_codes(
         times_pred, 
