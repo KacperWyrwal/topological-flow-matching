@@ -42,4 +42,4 @@ run:
   use_wandb: true
   wandb:
     project: topological-flow-matching
-    tags: [earthquakes, topological, ot]
+    tags: [earthquakes, topological, online_ot]

@@ -6,7 +6,7 @@ defaults:
   - override /model: residual_nn
   - override /sde: euclidean_heat_bm
   - override /sde_solver: euler_maruyama
-  - override /train/coupling: ot
+  - override /train/coupling: online_ot
   - override /hydra/sweeper: basic
   - _self_
 
@@ -44,4 +44,4 @@ run:
   use_wandb: true
   wandb:
     project: topological-flow-matching
-    tags: [earthquakes, euclidean, ot]
+    tags: [earthquakes, euclidean, online_ot]
