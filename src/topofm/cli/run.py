@@ -702,7 +702,7 @@ def run_test(
     print(f"✅ Train/eval split")
 
 
-    if cfg.data.name in ('brain', 'earthquakes'):
+    if cfg.data.name in ('traffic', 'earthquakes'):
         # If we are in the generation from Gaussian case, 
         # set the mean and standard deviation of the Gaussian 
         # to be derived from the data
