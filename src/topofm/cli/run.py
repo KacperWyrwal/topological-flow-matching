@@ -515,7 +515,7 @@ def _plot_predictions(cfg: DictConfig, model: torch.nn.Module, sde_solver: SDESo
         x0 = dataset.mu0.sample((1, ))
         x1_pred = sde_solver.pushforward(x0=x0, control=control)
         x1_pred = frame.inverse_transform(x1_pred)[0] # [D]
-        fig, axs = plot_single_cell_predictions(x1_pred, data_dir=data_dir)
+        fig, axs = plot_single_cell_predictions(x1_pred.cpu(), data_dir=data_dir)
     elif cfg.data.name == 'gaussians_to_moons':
         # Predict 
         control = ModelControl(model)
