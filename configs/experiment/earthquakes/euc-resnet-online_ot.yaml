@@ -8,13 +8,8 @@ defaults:
   - override /sde_solver: euler_maruyama
   - override /train/coupling: online_ot
   - override /hydra/sweeper: basic
+  - override /train: one_batch_per_epoch
   - _self_
-
-# Training setup
-# TODO it needs to be made clearer in the code that the testing and validation ratios
-# do not actually matter in this experiment.
-train:
-  epoch_size: 2048
 
 test:
   ratio: 0.2

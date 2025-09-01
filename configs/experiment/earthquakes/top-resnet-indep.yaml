@@ -8,12 +8,10 @@ defaults:
   - override /sde_solver: euler_maruyama
   - override /train/coupling: independent
   - override /hydra/sweeper: basic
+  - override /train: one_batch_per_epoch
   - _self_
 
 # Training setup
-train:
-  epoch_size: 2048
-
 test:
   ratio: 0.2
   batch_size: null
