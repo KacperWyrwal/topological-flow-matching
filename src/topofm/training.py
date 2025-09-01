@@ -136,9 +136,8 @@ def evaluate(
     ema: ExponentialMovingAverage,
     frame: Frame,
 ) -> dict[str, float]:
-    model.eval()
-
     with ema.average_parameters():
+        model.eval()
         control = ModelControl(model)
         W1 = 0.0
         W2 = 0.0
@@ -166,36 +165,36 @@ def evaluate__single_cell(
     data_loader: MatchingTestLoader,
     true_times: torch.Tensor,
     phate: torch.Tensor,
+    ema: ExponentialMovingAverage,
     frame: Frame,
 ) -> dict[str, float]:
-    model.eval()
+    with ema.average_parameters():
+        model.eval()
+        times = [0, 1, 2, 3, 4] # TODO maybe make this a parameter
+        control = ModelControl(model)
+        W1 = defaultdict(float)
+        W2 = defaultdict(float)
+        for x0, x1 in data_loader:
+            x1_pred = sde_solver.pushforward(x0=x0, control=control)
+            x1_pred = frame.inverse_transform(x1_pred)
 
-    times = [0, 1, 2, 3, 4] # TODO maybe make this a parameter
-    control = ModelControl(model)
-    W1 = defaultdict(float)
-    W2 = defaultdict(float)
-    for x0, x1 in data_loader:
-        x1_pred = sde_solver.pushforward(x0=x0, control=control)
-        x1_pred = frame.inverse_transform(x1_pred)
+            # FIXME Terrible 3am code 
+            x1_pred = x1_pred.squeeze(0) # [D]
+            x1_pred_times = single_cell_to_times(x1_pred, true_times) # [D]
+            for t in times: 
+                x1_pred_phate = single_cell_to_phate(phate=phate, times=x1_pred_times, t=t)
+                x1_phate = single_cell_to_phate(phate=phate, times=true_times, t=t)
 
-        # FIXME Terrible 3am code 
-        x1_pred = x1_pred.squeeze(0) # [D]
-        x1_pred_times = single_cell_to_times(x1_pred, true_times) # [D]
-        for t in times: 
-            x1_pred_phate = single_cell_to_phate(phate=phate, times=x1_pred_times, t=t)
-            x1_phate = single_cell_to_phate(phate=phate, times=true_times, t=t)
+                assert x1_pred_phate.ndim == 2, f"x1_pred_phate must be 2D, got {x1_pred_phate.ndim}D"
+                assert x1_phate.ndim == 2, f"x1_phate must be 2D, got {x1_phate.ndim}D"
+                assert x1_pred_phate.shape == x1_phate.shape, f"x1_pred_phate and x1_phate must have the same shape, got {x1_pred_phate.shape} and {x1_phate.shape}"
 
-            assert x1_pred_phate.ndim == 2, f"x1_pred_phate must be 2D, got {x1_pred_phate.ndim}D"
-            assert x1_phate.ndim == 2, f"x1_phate must be 2D, got {x1_phate.ndim}D"
-            assert x1_pred_phate.shape == x1_phate.shape, f"x1_pred_phate and x1_phate must have the same shape, got {x1_pred_phate.shape} and {x1_phate.shape}"
-
-            W1[t] += wasserstein_distance(x0=x1_pred_phate, x1=x1_phate, p=1).item()
-            W2[t] += wasserstein_distance(x0=x1_pred_phate, x1=x1_phate, p=2).item()
-
-    for t in times:
-        W1[t] /= data_loader.num_batches
-        W2[t] /= data_loader.num_batches
-    return {**{f"W1_{t}": W1[t] for t in times}, **{f"W2_{t}": W2[t] for t in times}}
+                W1[t] += wasserstein_distance(x0=x1_pred_phate, x1=x1_phate, p=1).item()
+                W2[t] += wasserstein_distance(x0=x1_pred_phate, x1=x1_phate, p=2).item()
+        for t in times:
+            W1[t] /= data_loader.num_batches
+            W2[t] /= data_loader.num_batches
+        return {**{f"W1_{t}": W1[t] for t in times}, **{f"W2_{t}": W2[t] for t in times}}
 
 
 
