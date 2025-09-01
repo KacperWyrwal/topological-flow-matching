@@ -110,6 +110,8 @@ def train(
     ema: ExponentialMovingAverage,
     objective: torch.nn.Module,
 ) -> float:
+    model.train()
+
     epoch_loss = 0.0
     for x0, x1 in data_loader:
         t = time_sampler.sample((data_loader.batch_size,))
@@ -134,23 +136,26 @@ def evaluate(
     ema: ExponentialMovingAverage,
     frame: Frame,
 ) -> dict[str, float]:
-    control = ModelControl(model)
-    W1 = 0.0
-    W2 = 0.0
-    for x0, x1 in data_loader:
-        # Push inputs forward using model control
-        x1_pred = sde_solver.pushforward(x0=x0, control=control)
+    model.eval()
 
-        # Convert to original frame, in case there is a dimensionality reduction
-        x1_pred = frame.inverse_transform(x1_pred)
-        x1 = frame.inverse_transform(x1)
+    with ema.average_parameters():
+        control = ModelControl(model)
+        W1 = 0.0
+        W2 = 0.0
+        for x0, x1 in data_loader:
+            # Push inputs forward using model control
+            x1_pred = sde_solver.pushforward(x0=x0, control=control)
 
-        # Compute Wasserstein distance 
-        W1 += wasserstein_distance(x0=x1_pred, x1=x1, p=1).item()
-        W2 += wasserstein_distance(x0=x1_pred, x1=x1, p=2).item()
-    W1 /= data_loader.num_batches
-    W2 /= data_loader.num_batches
-    return {"W1": W1, "W2": W2}
+            # Convert to original frame, in case there is a dimensionality reduction
+            x1_pred = frame.inverse_transform(x1_pred)
+            x1 = frame.inverse_transform(x1)
+
+            # Compute Wasserstein distance 
+            W1 += wasserstein_distance(x0=x1_pred, x1=x1, p=1).item()
+            W2 += wasserstein_distance(x0=x1_pred, x1=x1, p=2).item()
+        W1 /= data_loader.num_batches
+        W2 /= data_loader.num_batches
+        return {"W1": W1, "W2": W2}
 
 
 @torch.inference_mode()
@@ -159,11 +164,12 @@ def evaluate__single_cell(
     sde_solver: SDESolver,
     model: torch.nn.Module,
     data_loader: MatchingTestLoader,
-    ema: ExponentialMovingAverage,
     true_times: torch.Tensor,
     phate: torch.Tensor,
     frame: Frame,
 ) -> dict[str, float]:
+    model.eval()
+
     times = [0, 1, 2, 3, 4] # TODO maybe make this a parameter
     control = ModelControl(model)
     W1 = defaultdict(float)
@@ -235,8 +241,8 @@ def fit__single_cell(
             model=model,
             data_loader=train_data_loader,
             optimizer=optimizer,
-            ema=ema,
             objective=objective,
+            ema=ema,
             time_sampler=time_sampler,
         )
         # Validation epoch
@@ -245,8 +251,8 @@ def fit__single_cell(
                 sde_solver=sde_solver,
                 model=model,
                 data_loader=eval_data_loader,
-                ema=ema,
                 true_times=true_times,
+                ema=ema,
                 phate=phate,
                 frame=frame,
             )
