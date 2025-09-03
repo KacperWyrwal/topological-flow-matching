@@ -13,6 +13,7 @@ defaults:
 # Training setup
 train:
   batch_size: 1
+  epoch_size: 40
   early_stopping:
     metric_name: W2_4
 
