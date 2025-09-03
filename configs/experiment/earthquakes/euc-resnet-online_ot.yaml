@@ -8,7 +8,6 @@ defaults:
   - override /sde_solver: euler_maruyama
   - override /train/coupling: online_ot
   - override /hydra/sweeper: basic
-  - override /train: one_batch_per_epoch
   - _self_
 
 test:
