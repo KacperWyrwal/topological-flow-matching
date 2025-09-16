@@ -49,7 +49,7 @@ from ..sde_solvers import (
 )
 from ..models import (
     ResidualNN, 
-    GCN,
+    GCNInFrame,
 )
 from ..distributions import (
     Empirical, 
@@ -210,7 +210,7 @@ def _build_sde(cfg: DictConfig, eigenvalues: torch.Tensor) -> HeatBMTSDE:
         return HeatBMTSDE(eigenvalues=eigenvalues, c=c, sigma=sigma)
 
 
-def _build_model(cfg: DictConfig, data_dim: int) -> torch.nn.Module:
+def _build_model(cfg: DictConfig, frame: Frame, data_dim: int) -> torch.nn.Module:
     if cfg.model.name == "residual_nn":
         model = ResidualNN(
             data_dim=data_dim, 
@@ -220,7 +220,18 @@ def _build_model(cfg: DictConfig, data_dim: int) -> torch.nn.Module:
         )
         assert model.device == torch.get_default_device()
         return model
-    elif cfg.model.name == "gcn":
+    elif cfg.model.name == "gnn":
+        L = _build_laplacian(cfg)
+        model = GCNInFrame(
+            laplacian=L, 
+            frame=frame,
+            hidden_dim=cfg.model.hidden_dim, 
+            time_embed_dim=cfg.model.time_embed_dim,
+            n_layers=cfg.model.n_layers,
+        ).to(torch.get_default_device())
+        # assert model.device == torch.get_default_device()
+        return model
+
         raise NotImplementedError("GCN support coming soon.")
     else:
         raise ValueError(f"Unknown model: {cfg.model.name}")
@@ -684,7 +695,7 @@ def run_test(
     test_dataset: MatchingDataset, 
     sde: SDE, 
 ) -> None:
-    model = _build_model(cfg, data_dim=train_dataset.dim)
+    model = _build_model(cfg, frame=frame, data_dim=train_dataset.dim)
     print(f"✅ Model built: {type(model).__name__}")
     
     sde_solver = _build_sde_solver(cfg, sde=sde)
