@@ -1,6 +1,6 @@
 seed: 0
 device: cpu
-dtype: float64
+dtype: float32
 use_wandb: false
 mode: test
 wandb:

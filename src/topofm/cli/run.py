@@ -49,7 +49,7 @@ from ..sde_solvers import (
 )
 from ..models import (
     ResidualNN, 
-    GCNInFrame,
+    GCN,
 )
 from ..distributions import (
     Empirical, 
@@ -142,7 +142,8 @@ def _build_laplacian_eigenpairs(cfg: DictConfig) -> tuple[torch.Tensor, torch.Te
 def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
     data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
     if cfg.data.name == 'brain':
-        return load_brain_laplacian(data_dir=data_dir)
+        L = load_brain_laplacian(data_dir=data_dir)
+        return L.to(torch.get_default_dtype())
     if cfg.data.name == 'gaussians_to_moons':
         if cfg.data.laplacian == 'fully_connected':
             A = torch.tensor([
@@ -151,20 +152,21 @@ def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
             ])
             D = torch.diag_embed(torch.sum(A, dim=-1))
             L = D - A
-            return L
+            return L.to(torch.get_default_dtype())
         else:
             raise ValueError(f"Unsupported Laplacian type {cfg.data.laplacian} for dataset {cfg.data.name}")
     if cfg.data.name == 'earthquakes':
         L = load_earthquakes_laplacian(data_dir=data_dir)
         assert L.device == torch.get_default_device()
-        return L
+        return L.to(torch.get_default_dtype())
     if cfg.data.name in ['ocean', 'single_cell']:
-        return _build_laplacian_eigenpairs(cfg)
+        eigenvecs, eigenvalues = _build_laplacian_eigenpairs(cfg)
+        return eigenvecs.to(torch.get_default_dtype()), eigenvalues.to(torch.get_default_dtype())
 
     if cfg.data.name == 'traffic':
         L = load_traffic_laplacian(data_dir=data_dir)
         assert L.device == torch.get_default_device()
-        return L
+        return L.to(torch.get_default_dtype())
 
     raise ValueError(f"Unsupported tensor dataset name: {cfg.data.name}")
 
@@ -221,10 +223,8 @@ def _build_model(cfg: DictConfig, frame: Frame, data_dim: int) -> torch.nn.Modul
         assert model.device == torch.get_default_device()
         return model
     elif cfg.model.name == "gnn":
-        L = _build_laplacian(cfg)
-        model = GCNInFrame(
-            laplacian=L, 
-            frame=frame,
+        model = GCN(
+            eigenvalues=frame.eigenvalues, 
             hidden_dim=cfg.model.hidden_dim, 
             time_embed_dim=cfg.model.time_embed_dim,
             n_layers=cfg.model.n_layers,
@@ -247,6 +247,7 @@ def _build_dataset(cfg: DictConfig, frame: Frame | None = None):
     if cfg.data.name == "brain":
         print("🧠 Loading brain dataset...")
         x0, x1 = load_brain_data(data_dir=data_dir)
+        x0, x1 = x0.to(torch.get_default_dtype()), x1.to(torch.get_default_dtype())
         print(f"✅ Brain data loaded: x0 shape={x0.shape}, x1 shape={x1.shape}")
         
         print("📊 Creating Empirical distributions...")
@@ -302,6 +303,7 @@ def _build_dataset(cfg: DictConfig, frame: Frame | None = None):
     if cfg.data.name == 'traffic':
         print("📊 Creating Traffic dataset...")
         x1 = load_traffic_data(data_dir=data_dir)
+        x1 = x1.to(torch.get_default_dtype())
         mu1 = Empirical(x1)
         mu1 = EmpiricalInFrame(mu1, frame)
         
@@ -318,6 +320,7 @@ def _build_dataset(cfg: DictConfig, frame: Frame | None = None):
     if cfg.data.name == 'single_cell':
         print("📊 Creating Single-cell dataset...")
         x0, x1 = load_single_cell_data(data_dir=data_dir)
+        x0, x1 = x0.to(torch.get_default_dtype()), x1.to(torch.get_default_dtype())
         print(f"✅ Single-cell data loaded: x0 shape={x0.shape}, x1 shape={x1.shape}")
         
         mu0 = Empirical(x0)

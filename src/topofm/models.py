@@ -3,7 +3,6 @@ from abc import abstractmethod
 
 import numpy as np
 import torch
-from .frames import Frame
 
 
 def timestep_embedding(timesteps: torch.Tensor, dim: int, max_period: int = 10000) -> torch.Tensor:
@@ -35,14 +34,13 @@ class FCs(torch.nn.Module):
 class ResNet_FC(torch.nn.Module):
     def __init__(self, data_dim: int, hidden_dim: int, num_res_blocks: int) -> None:
         super().__init__()
-        self.hidden_dim: int = hidden_dim
-        self.map: torch.nn.Linear = torch.nn.Linear(data_dim, hidden_dim)
-        self.res_blocks: torch.nn.ModuleList = torch.nn.ModuleList([self.build_res_block() for _ in range(num_res_blocks)])
+        self.map = torch.nn.Linear(data_dim, hidden_dim)
+        self.res_blocks = torch.nn.ModuleList([self.build_res_block() for _ in range(num_res_blocks)])
 
     def build_res_block(self) -> torch.nn.Sequential:
-        hid: int = self.hidden_dim
-        layers: list[torch.nn.Module] = []
-        widths: list[int] = [hid] * 4
+        hid = self.hidden_dim
+        layers = []
+        widths = [hid] * 4
         for i in range(len(widths) - 1):
             layers.append(torch.nn.Linear(widths[i], widths[i + 1]))
             layers.append(torch.nn.SiLU())
@@ -70,100 +68,46 @@ class TimestepEmbedSequential(torch.nn.Sequential, TimestepBlock):
         return x
 
 
-class SparseGCNLayer(torch.nn.Module):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        conv_order: int,
-        laplacian: torch.Tensor,
-        *,
-        aggr_norm: bool = False,
-        initialization: str = "xavier_uniform",
-    ) -> None:
-        assert initialization in ["xavier_uniform", "xavier_normal"]
-        super().__init__()
-        self.K = conv_order
-        self.L = laplacian
-        self.aggr_norm = aggr_norm
-        self.W = torch.nn.Parameter(torch.empty(in_channels, out_channels, self.K + 1))
-        torch.nn.init.xavier_uniform_(self.W, gain=math.sqrt(2))
-        self.deg_inv = torch.sparse.sum(self.L, dim=1).to_dense().reciprocal_()
-        self.deg_inv[~torch.isfinite(self.deg_inv)] = 0.0
-
-    def _normalize(self, x: torch.Tensor) -> torch.Tensor:
-        x = torch.einsum("i,ij->ij ", self.deg_inv, x)
-        x[~torch.isfinite(x)] = 0.0
-        return x
-
-
 class GCNLayer(torch.nn.Module):
     def __init__(
         self,
         in_channels: int,
         out_channels: int,
         conv_order: int,
-        laplacian: torch.Tensor,
-        *,
-        aggr_norm: bool = False,
-        update_func: str | None = None,
-        initialization: str = "xavier_uniform",
+        eigenvalues: torch.Tensor,
+        update_func: str = 'relu',
     ) -> None:
+        assert conv_order > 0
+
         super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
         self.conv_order = conv_order
-        self.laplacian = laplacian
-        self.aggr_norm = aggr_norm
-        self.update_func = update_func
-        self.initialization = initialization
-        assert initialization in ["xavier_uniform", "xavier_normal"]
-        self.weight: torch.nn.Parameter = torch.nn.Parameter(
-            torch.Tensor(self.in_channels, self.out_channels, 1 + self.conv_order)
+        self.eigenvalues = eigenvalues
+        self.weights = torch.nn.Parameter(
+            eigenvalues.new_empty(in_channels, out_channels, 1 + self.conv_order),
         )
-        self.reset_parameters()
+        torch.nn.init.xavier_uniform_(self.weights, gain=1.414)
 
-    def reset_parameters(self, gain: float = 1.414) -> None:
-        if self.initialization == "xavier_uniform":
-            torch.nn.init.xavier_uniform_(self.weight, gain=gain)
-        elif self.initialization == "xavier_normal":
-            torch.nn.init.xavier_normal_(self.weight, gain=gain)
+        # set update function
+        if update_func == 'relu':
+            self.update_func = torch.nn.ReLU()
+        elif update_func == 'id':
+            self.update_func = torch.nn.Identity()
+        else:
+            raise ValueError(f"Update function {update_func} not supported")
 
-    def aggr_norm_func(self, conv_operator: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        neighborhood_size = torch.sum(conv_operator.to_dense(), dim=1)
-        neighborhood_size_inv = 1 / neighborhood_size
-        neighborhood_size_inv[~(torch.isfinite(neighborhood_size_inv))] = 0
-        x = torch.einsum("i,ij->ij ", neighborhood_size_inv, x)
-        x[~torch.isfinite(x)] = 0
-        return x
+        # Precompute eigenvalue powers
+        powers = torch.arange(1 + self.conv_order, device=self.eigenvalues.device, dtype=self.eigenvalues.dtype)
+        self.eigenvalues_pow = torch.pow(self.eigenvalues[:, None], powers) # [D, K]
 
-    def update(self, x: torch.Tensor) -> torch.Tensor | None:
-        if self.update_func == "sigmoid":
-            return torch.sigmoid(x)
-        if self.update_func == "relu":
-            return torch.nn.functional.relu(x)
-        if self.update_func == "id":
-            return x
-        return None
-
-    def chebyshev_conv(self, conv_operator: torch.Tensor, conv_order: int, x: torch.Tensor) -> torch.Tensor:
-        num_simplices, num_channels = x.shape
-        X = torch.empty(size=(num_simplices, num_channels, conv_order))
-        X[:, :, 0] = torch.mm(conv_operator, x)
-        for k in range(1, conv_order):
-            X[:, :, k] = torch.mm(conv_operator, X[:, :, k - 1])
-            if self.aggr_norm:
-                X[:, :, k] = self.aggr_norm_func(conv_operator, X[:, :, k])
-        return X
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        num_simplices, _ = x.shape
-        x_identity = torch.unsqueeze(x, 2)
-        if self.conv_order > 0:
-            x = self.chebyshev_conv(self.laplacian, self.conv_order, x)
-            x = torch.cat((x_identity, x), 2)
-        y = torch.einsum("nik,iok->no", x, self.weight)
-        return y
+    def forward(self, y: torch.Tensor) -> torch.Tensor:
+        """
+        y [..., eigdim, indim]
+        """
+        weights = self.weights
+        eigenvalues_pow = self.eigenvalues_pow
+        H = torch.einsum("iok,lk->lio", weights, eigenvalues_pow)      # [L, I, O]
+        out = torch.einsum("...li,lio->...lo", y, H) 
+        return self.update_func(out)
 
 
 class GCNBlock(torch.nn.Module):
@@ -171,11 +115,9 @@ class GCNBlock(torch.nn.Module):
         self,
         in_channels: int,
         hidden_channels: int,
-        laplacian: torch.Tensor,
+        eigenvalues: torch.Tensor,
         *,
         conv_order: int = 1,
-        aggr_norm: bool = False,
-        update_func: str = None,
         n_layers: int = 2,
     ) -> None:
         super().__init__()
@@ -186,7 +128,8 @@ class GCNBlock(torch.nn.Module):
                 in_channels=in_channels,
                 out_channels=hidden_channels,
                 conv_order=conv_order,
-                laplacian=laplacian,
+                eigenvalues=eigenvalues,
+                update_func='id',
             )
         )
         # Hidden layers
@@ -196,8 +139,7 @@ class GCNBlock(torch.nn.Module):
                     in_channels=hidden_channels,
                     out_channels=hidden_channels,
                     conv_order=conv_order,
-                    laplacian=laplacian,
-                    aggr_norm=aggr_norm,
+                    eigenvalues=eigenvalues,
                     update_func='relu',
                 )
             )
@@ -207,73 +149,52 @@ class GCNBlock(torch.nn.Module):
                 in_channels=hidden_channels,
                 out_channels=1,
                 conv_order=conv_order,
-                laplacian=laplacian,
-                aggr_norm=aggr_norm,
+                eigenvalues=eigenvalues,
                 update_func='id',
             )
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, y: torch.Tensor) -> torch.Tensor:
         for layer in self.layers:
-            x = layer(x)
-        return x
+            y = layer(y)
+        return y
 
 
 class GCN(torch.nn.Module):
     def __init__(
         self,
-        laplacian: torch.Tensor,
+        eigenvalues: torch.Tensor,
         hidden_dim: int = 256,
         time_embed_dim: int = 128,
         n_layers: int = 2,
     ) -> None:
         super().__init__()
-        data_dim: int = laplacian.shape[-1]
-        self.time_embed_dim: int = time_embed_dim
-        hid: int = hidden_dim
-        self.t_module: torch.nn.Sequential = torch.nn.Sequential(
-            torch.nn.Linear(self.time_embed_dim, hid),
+        data_dim = eigenvalues.shape[-1]
+        self.time_embed_dim = time_embed_dim
+        self.t_module = torch.nn.Sequential(
+            torch.nn.Linear(self.time_embed_dim, hidden_dim),
             torch.nn.SiLU(),
-            torch.nn.Linear(hid, hid),
+            torch.nn.Linear(hidden_dim, hidden_dim),
         )
-        self.x_module1: GCNBlock = GCNBlock(in_channels=1, hidden_channels=hidden_dim, n_layers=2, laplacian=laplacian)
-        self.x_module2: ResNet_FC = ResNet_FC(data_dim, hidden_dim, num_res_blocks=0)
-        self.out_module: torch.nn.Sequential = torch.nn.Sequential(
-            torch.nn.Linear(hid, hid),
+        self.x_module1 = GCNBlock(in_channels=1, hidden_channels=hidden_dim, n_layers=2, eigenvalues=eigenvalues)
+        self.x_module2 = ResNet_FC(data_dim, hidden_dim, num_res_blocks=0)
+        self.out_module = torch.nn.Sequential(
+            torch.nn.Linear(hidden_dim, hidden_dim),
             torch.nn.SiLU(),
-            torch.nn.Linear(hid, data_dim),
+            torch.nn.Linear(hidden_dim, data_dim),
         )
 
-    @property
-    def inner_dtype(self) -> torch.dtype:
-        # kept for API compatibility; not used internally
-        return next(self.parameters()).dtype
-
-    def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        if len(t.shape) == 0:
-            t = t[None]
-        t_emb: torch.Tensor = timestep_embedding(t, self.time_embed_dim)
-        t_out: torch.Tensor = self.t_module(t_emb)
-        x = x.unsqueeze(-1)
-        x_out = torch.empty_like(x)
-        for i in range(x.shape[0]):
-            x_out[i] = self.x_module1(x[i])
-        x_out = x_out.squeeze(-1)
-        x_out = self.x_module2(x_out)
-        out = self.out_module(x_out + t_out)
+    def forward(self, t: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        assert y.ndim > 1
+        t = torch.atleast_1d(t)
+        y = y.unsqueeze(-1)
+        t_emb = timestep_embedding(t, self.time_embed_dim)
+        t_out = self.t_module(t_emb)
+        y_out = self.x_module1(y)
+        y_out = y_out.squeeze(-1)
+        y_out = self.x_module2(y_out)
+        out = self.out_module(y_out + t_out)
         return out
-
-
-class GCNInFrame(GCN):
-    def __init__(self, laplacian: torch.Tensor, frame: Frame, hidden_dim: int = 256, time_embed_dim: int = 128, n_layers: int = 2) -> None:
-        super().__init__(laplacian, hidden_dim, time_embed_dim, n_layers)
-        self.frame = frame
-
-    def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        x = self.frame.inverse_transform(x)
-        y = super().forward(t, x)
-        y = self.frame.transform(y)
-        return y
 
 
 class ResidualNN(torch.nn.Module):
@@ -461,6 +382,7 @@ class SNN(torch.nn.Module):
 
 import torch
 import torch.nn as nn
+from torch.nn import SiLU
 
 def build_snn(data_dim):
     return SNNPolicy(data_dim)
