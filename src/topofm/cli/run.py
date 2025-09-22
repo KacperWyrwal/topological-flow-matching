@@ -286,6 +286,7 @@ def _build_dataset(cfg: DictConfig, frame: Frame | None = None):
     if cfg.data.name == 'earthquakes':
         print("📊 Creating Earthquakes dataset...")
         x1 = load_earthquakes_data(data_dir=data_dir)
+        x1 = x1.to(torch.get_default_dtype())
         print(f"✅ Earthquake data loaded: x1 shape={x1.shape}")
         mu1 = Empirical(x1)
         print(f"✅ Empirical distribution created")
@@ -344,6 +345,8 @@ def _build_dataset(cfg: DictConfig, frame: Frame | None = None):
     if cfg.data.name == 'ocean':
         print("📊 Creating Ocean dataset...")
         eigenpairs = load_ocean_eigenpairs(data_dir=data_dir)
+        for key in eigenpairs:
+            eigenpairs[key] = eigenpairs[key].to(torch.get_default_dtype())
 
         mu0 = EdgeGP(
             grad_vecs=eigenpairs['grad_vecs'],
