@@ -184,6 +184,8 @@ def _build_frame(cfg: DictConfig) -> torch.Tensor:
         eigenvectors = eigenvectors.mT
         print(f"✅ Eigenvalues loaded: shape={eigenvalues.shape}")
         print(f"✅ Eigenvectors loaded: shape={eigenvectors.shape}")
+        eigenvectors = eigenvectors.to(torch.get_default_dtype())
+        eigenvalues = eigenvalues.to(torch.get_default_dtype())
         frame = SpectralFrame(eigenvalues=eigenvalues, eigenvectors=eigenvectors)
         print("✅ SpectralFrame created")
         return frame
@@ -191,6 +193,8 @@ def _build_frame(cfg: DictConfig) -> torch.Tensor:
     if cfg.frame.name == 'spectral' and cfg.data.name == 'single_cell':
         eigenvectors, eigenvalues = _build_laplacian(cfg)
         print(f"✅ Eigenvectors loaded: shape={eigenvectors.shape}")
+        eigenvectors = eigenvectors.to(torch.get_default_dtype())
+        eigenvalues = eigenvalues.to(torch.get_default_dtype())
         frame = SpectralFrame(eigenvalues=eigenvalues, eigenvectors=eigenvectors)
         print("✅ SpectralFrame created")
         return frame
@@ -198,6 +202,7 @@ def _build_frame(cfg: DictConfig) -> torch.Tensor:
     if cfg.frame.name == 'spectral' and cfg.data.name != 'ocean':    
         L = _build_laplacian(cfg)
         print(f"✅ Laplacian loaded: shape={L.shape}")
+        L = L.to(torch.get_default_dtype())
         frame = SpectralFrame(L)
         print("✅ SpectralFrame created")
         return frame
