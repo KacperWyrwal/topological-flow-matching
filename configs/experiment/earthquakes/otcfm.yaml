@@ -1,0 +1,41 @@
+# @package _global_
+
+defaults:
+  - override /data: earthquakes
+  - override /frame: spectral
+  - override /model: residual_nn
+  - override /sde: euclidean_heat_bm
+  - override /sde_solver: euler_maruyama
+  - override /train/coupling: online_ot
+  - override /hydra/sweeper: basic
+  - _self_
+
+test:
+  ratio: 0.2
+  batch_size: null
+  epoch_size: null
+
+validation:
+  ratio: 0.1
+  batch_size: null
+  epoch_size: null
+
+# Plotting
+plot:
+  predictions:
+    enabled: false  # 2D plot not applicable to brain by default
+
+hydra:
+  sweeper:
+    params:
+      run.seed: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+
+# Run and W&B
+run:
+  device: cuda
+  dtype: float64
+  mode: test
+  use_wandb: true
+  wandb:
+    project: topological-flow-matching
+    tags: [earthquakes, euclidean, online_ot]
