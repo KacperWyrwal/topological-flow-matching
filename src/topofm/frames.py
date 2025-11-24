@@ -42,10 +42,28 @@ class SpectralFrame(Frame):
         
 
 class StandardFrame(Frame):
+
+    def __init__(self, dim: int) -> None:
+        super().__init__()
+        self._dim = dim
+        self._eigenvalues = torch.ones(dim)
+        self._eigenvectors = torch.eye(dim)
+
     def transform(self, *args: torch.Tensor) -> torch.Tensor | tuple[torch.Tensor, ...]:
         return args[0] if len(args) == 1 else args
 
     def inverse_transform(self, *args: torch.Tensor) -> torch.Tensor | tuple[torch.Tensor, ...]:
         return args[0] if len(args) == 1 else args
 
+    @property
+    def dim(self) -> int:
+        return self._dim
+
+    @property
+    def eigenvalues(self) -> torch.Tensor:
+        return self._eigenvalues
+
+    @property
+    def eigenvectors(self) -> torch.Tensor:
+        return self._eigenvectors
 

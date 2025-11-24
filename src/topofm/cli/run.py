@@ -171,10 +171,47 @@ def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
     raise ValueError(f"Unsupported tensor dataset name: {cfg.data.name}")
 
 
-def _build_frame(cfg: DictConfig) -> torch.Tensor:
+def _get_data_dim(cfg: DictConfig) -> int:
+    """Get the data dimension for the given dataset configuration."""
+    data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
+    
+    if cfg.data.name == 'brain':
+        x0, x1 = load_brain_data(data_dir=data_dir)
+        return x0.shape[-1]
+    
+    if cfg.data.name == 'earthquakes':
+        x1 = load_earthquakes_data(data_dir=data_dir)
+        return x1.shape[-1]
+    
+    if cfg.data.name == 'traffic':
+        x1 = load_traffic_data(data_dir=data_dir)
+        return x1.shape[-1]
+    
+    if cfg.data.name == 'single_cell':
+        x0, x1 = load_single_cell_data(data_dir=data_dir)
+        return x0.shape[-1]
+    
+    if cfg.data.name == 'gaussians_to_moons':
+        return 2  # 2D dataset
+    
+    if cfg.data.name == 'ocean':
+        # For ocean, dimension is determined by the eigenpairs
+        eigenpairs = load_ocean_eigenpairs(data_dir=data_dir)
+        grad_vecs = eigenpairs['grad_vecs']
+        curl_vecs = eigenpairs['curl_vecs']
+        harm_vecs = eigenpairs['harm_vecs']
+        # The dimension is the number of edges (columns of eigenvectors)
+        return grad_vecs.shape[1]
+    
+    raise ValueError(f"Unsupported dataset name: {cfg.data.name}")
+
+
+def _build_frame(cfg: DictConfig, dim: int | None = None) -> Frame:
     if cfg.frame.name == 'standard':
-        frame = StandardFrame()
-        print("✅ StandardFrame created")
+        if dim is None:
+            dim = _get_data_dim(cfg)
+        frame = StandardFrame(dim=dim)
+        print(f"✅ StandardFrame created with dim={dim}")
         return frame
 
     if cfg.frame.name == 'spectral' and cfg.data.name == 'ocean':

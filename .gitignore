@@ -217,12 +217,13 @@ stripy-venv/
 uv.lockdatasets/single_cell/A.npy
 
 # Config experiment YAMLs: ignore all except canonical names
-# Keep only icfm.yaml, itfm.yaml, otcfm.yaml, ottfm.yaml tracked under configs/experiment/**
+# Keep only icfm.yaml, itfm.yaml, otcfm.yaml, ottfm.yaml, and -standard.yaml variants tracked under configs/experiment/**
 configs/experiment/**/*.yaml
 !configs/experiment/**/icfm.yaml
 !configs/experiment/**/itfm.yaml
 !configs/experiment/**/otcfm.yaml
 !configs/experiment/**/ottfm.yaml
+!configs/experiment/**/*-standard.yaml
 !configs/experiment/default.yaml
 
 # Local files not intended for version control
