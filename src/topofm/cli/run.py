@@ -201,7 +201,7 @@ def _get_data_dim(cfg: DictConfig) -> int:
         curl_vecs = eigenpairs['curl_vecs']
         harm_vecs = eigenpairs['harm_vecs']
         # The dimension is the number of edges (columns of eigenvectors)
-        return grad_vecs.shape[1]
+        return grad_vecs.shape[0] + curl_vecs.shape[0] + harm_vecs.shape[0]  # Correct: number of eigenvectors
     
     raise ValueError(f"Unsupported dataset name: {cfg.data.name}")
 
