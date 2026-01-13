@@ -34,6 +34,7 @@ class FCs(torch.nn.Module):
 class ResNet_FC(torch.nn.Module):
     def __init__(self, data_dim: int, hidden_dim: int, num_res_blocks: int) -> None:
         super().__init__()
+        self.hidden_dim = hidden_dim
         self.map = torch.nn.Linear(data_dim, hidden_dim)
         self.res_blocks = torch.nn.ModuleList([self.build_res_block() for _ in range(num_res_blocks)])
 

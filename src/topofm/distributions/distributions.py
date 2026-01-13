@@ -1,10 +1,61 @@
 import torch
-import math
 from abc import abstractmethod
 from torch.distributions import Distribution
 from .frames import Frame, StandardFrame
-# HodgeBasis is imported here to avoid circular import
-# from .data import HodgeBasis
+
+
+class NodeGP(Distribution):
+    """
+    Zero-mean heat GP on the nodes of a graph.
+    """
+    def __init__(self, eigenvectors: torch.Tensor, eigenvalues: torch.Tensor, kappa: float):
+        super().__init__(validate_args=False)
+        self.eigenvectors = eigenvectors
+        self.eigenvalues = eigenvalues
+        self.kappa = kappa
+
+        # Reshape eigenvalues and spectral variance
+        self.spectral_variance = torch.exp(- kappa ** 2.0 / 2.0 * eigenvalues) # [A]
+        # self.spectral_variance = self.spectral_variance / self.spectral_variance.sum().sqrt()
+        self.spectral_stddev = self.spectral_variance.sqrt()
+
+        # Noise 
+        self.spectral_noise = torch.ones_like(self.spectral_stddev)
+        self.spectral_mean = torch.zeros_like(self.spectral_stddev)
+        
+        # Shapes 
+        self._batch_shape = torch.Size()
+        self._event_shape = self.spectral_variance.shape
+
+    def sample(self, shape: torch.Size):
+        return self.sample_spectral(shape)
+
+    def sample_spectral(self, shape: torch.Size):
+        """
+        Sample spectral weights. 
+        """
+        epsilon = torch.randn(*shape, *self._event_shape) # [..., A]
+        return self.spectral_mean + self.spectral_stddev * epsilon * self.spectral_noise # [..., A]
+
+    def sample_euclidean(self, shape: torch.Size):
+        spectral_samples = self.sample_spectral(shape) # [..., A]
+        return torch.einsum('md, ...m -> ...d', self.eigenvectors, spectral_samples)
+
+    @property
+    def loc(self) -> torch.Tensor:
+        return self.spectral_mean
+    
+    @loc.setter
+    def loc(self, value_spectral: torch.Tensor):
+        self.spectral_mean = value_spectral
+    
+    @property
+    def scale(self) -> torch.Tensor:
+        return self.spectral_noise
+    
+    @scale.setter
+    def scale(self, value_spectral: torch.Tensor):
+        self.spectral_noise = value_spectral
 
 
 class EdgeGP(Distribution):
@@ -47,12 +98,20 @@ class EdgeGP(Distribution):
 
         # Reshape eigenvalues and spectral variance
         self.spectral_variance = torch.concat([harm_variance, grad_variance, curl_variance], dim=0) # [A + B + C]
+        # self.spectral_variance = self.spectral_variance / self.spectral_variance.sum().sqrt()
         self.spectral_stddev = self.spectral_variance.sqrt()
         self.eigenvectors = torch.concat([harm_vecs, grad_vecs, curl_vecs], dim=0) # [A + B + C, D]
         
         # Shapes 
         self._batch_shape = torch.Size()
         self._event_shape = self.spectral_variance.shape
+
+        self.spectral_mean = torch.zeros_like(self.spectral_variance)
+        self.spectral_noise = torch.ones_like(self.spectral_variance)
+
+        self.dtype = self.spectral_stddev.dtype
+        self.device = self.spectral_stddev.device
+        print(f"EdgeGP dtype: {self.dtype}, device: {self.device}")
 
     def sample(self, shape: torch.Size):
         return self.sample_spectral(shape)
@@ -66,12 +125,28 @@ class EdgeGP(Distribution):
 
         returns: [..., 3M]
         """
-        epsilon = torch.randn(*shape, *self._event_shape) # [..., 3M]
-        return self.spectral_stddev * epsilon # [..., 3M]
+        epsilon = torch.randn(*shape, *self._event_shape, dtype=self.dtype, device=self.device) # [..., 3M]
+        return self.spectral_mean + self.spectral_noise * self.spectral_stddev * epsilon # [..., 3M]
         
     def sample_euclidean(self, shape: torch.Size):
         spectral_samples = self.sample_spectral(shape) # [..., 3M]
         return torch.einsum('md, ...m -> ...d', self.eigenvectors, spectral_samples)
+
+    @property
+    def loc(self) -> torch.Tensor:
+        return self.spectral_mean
+    
+    @loc.setter
+    def loc(self, value_spectral: torch.Tensor):
+        self.spectral_mean = value_spectral
+    
+    @property
+    def scale(self) -> torch.Tensor:
+        return self.spectral_noise
+    
+    @scale.setter
+    def scale(self, value_spectral: torch.Tensor):
+        self.spectral_noise = value_spectral
 
 
 class Moons(Distribution):
@@ -205,6 +280,10 @@ class InFrame(Distribution):
         self.base = base
         self._event_shape = None # Will be computed on first access
 
+    @property 
+    def base_dist(self) -> Distribution:
+        return self.base
+
     @abstractmethod
     def sample(self, shape: torch.Size) -> torch.Tensor: ... 
 
@@ -245,4 +324,6 @@ class AnalyticInFrame(InFrame):
 
     def sample(self, shape: torch.Size) -> torch.Tensor:
         x = self.base.sample(shape)
+        if isinstance(self.base, (NodeGP, EdgeGP)):
+            return x
         return self.frame.transform(x)

@@ -3,13 +3,21 @@ import torch
 import pandas as pd 
 from matplotlib import pyplot as plt
 from matplotlib.collections import LineCollection
-import scanpy as sc
 import os 
-from anndata import AnnData
 import plotly.express as px 
 import plotly.graph_objects as go 
 from .utils import single_cell_to_times
 from .data import load_brain_regions_centroids
+
+# Optional imports for single-cell plotting
+try:
+    import scanpy as sc
+    from anndata import AnnData
+    _SCANPY_AVAILABLE = True
+except ImportError:
+    _SCANPY_AVAILABLE = False
+    sc = None
+    AnnData = None
 
 
 def plot_trajectory(
@@ -220,6 +228,12 @@ def _plot_single_cell_data(
     show_legend: bool = False,
     title: str | None = None,
 ) -> None:
+    if not _SCANPY_AVAILABLE:
+        raise ImportError(
+            "scanpy and anndata are required for single-cell plotting. "
+            "Install them with: uv pip install scanpy anndata\n"
+            "Note: scanpy requires cmake. On macOS: brew install cmake"
+        )
     adata = AnnData(X=X_phate)
     adata.obsm["X_phate"] = X_phate
     adata.obs["sample_labels"] = sample_labels
@@ -247,6 +261,12 @@ def plot_single_cell_predictions(
     *, 
     data_dir: str = './', 
 ) -> None:
+    if not _SCANPY_AVAILABLE:
+        raise ImportError(
+            "scanpy and anndata are required for single-cell plotting. "
+            "Install them with: uv pip install scanpy anndata\n"
+            "Note: scanpy requires cmake. On macOS: brew install cmake"
+        )
     adata = sc.read_h5ad(os.path.join(data_dir, "ebdata_v3.h5ad"))
     X_phate = adata.obsm["X_phate"]
     sample_labels = adata.obs["sample_labels"].values

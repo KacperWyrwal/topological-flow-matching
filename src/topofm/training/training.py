@@ -113,7 +113,7 @@ def train(
     model.train()
 
     epoch_loss = 0.0
-    for x0, x1 in data_loader:
+    for batch_idx, (x0, x1) in enumerate(data_loader):
         t = time_sampler.sample((data_loader.batch_size,))
         x = sde.marginal_distribution(t=t, x0=x0, x1=x1).sample()
         ut = bridge_control(sde=sde, t=t, x=x, x1=x1)
@@ -136,7 +136,27 @@ def evaluate(
     ema: ExponentialMovingAverage,
     frame: Frame,
 ) -> dict[str, float]:
-    with ema.average_parameters():
+    if ema is not None:
+        with ema.average_parameters():
+            model.eval()
+            control = ModelControl(model)
+            W1 = 0.0
+            W2 = 0.0
+            for x0, x1 in data_loader:
+                # Push inputs forward using model control
+                x1_pred = sde_solver.pushforward(x0=x0, control=control)
+
+                # Convert to original frame, in case there is a dimensionality reduction
+                x1_pred = frame.inverse_transform(x1_pred)
+                x1 = frame.inverse_transform(x1)
+
+                # Compute Wasserstein distance 
+                W1 += wasserstein_distance(x0=x1_pred, x1=x1, p=1).item()
+                W2 += wasserstein_distance(x0=x1_pred, x1=x1, p=2).item()
+            W1 /= data_loader.num_batches
+            W2 /= data_loader.num_batches
+            return {"W1": W1, "W2": W2}
+    else:
         model.eval()
         control = ModelControl(model)
         W1 = 0.0

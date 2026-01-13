@@ -29,6 +29,7 @@ from ..data import (
     load_ocean_eigenpairs,
     load_traffic_data,
     load_traffic_laplacian,
+    load_traffic_b1,
     load_single_cell_true_times,
     load_single_cell_phate,
     load_single_cell_eigenpairs,
@@ -58,6 +59,7 @@ from ..distributions import (
     EightGaussians, 
     Moons,
     EdgeGP,
+    NodeGP,
 )
 from ..coupling import (
     Coupling,
@@ -130,12 +132,17 @@ def _setup_wandb(cfg: DictConfig):
     return wandb.run
 
 
-def _build_laplacian_eigenpairs(cfg: DictConfig) -> tuple[torch.Tensor, torch.Tensor]:
+def _build_laplacian_eigenpairs(cfg: DictConfig) -> tuple[torch.Tensor, torch.Tensor] | dict[str, torch.Tensor]:
     data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
     if cfg.data.name == 'ocean':
-        return load_ocean_eigenpairs(data_dir=data_dir)
+        eigenpairs = load_ocean_eigenpairs(data_dir=data_dir)
+        eigenpairs = {k: v.to(torch.get_default_dtype()).to(torch.get_default_device()) for k, v in eigenpairs.items()}
+        return eigenpairs
     if cfg.data.name == 'single_cell':
-        return load_single_cell_eigenpairs(data_dir=data_dir)
+        eigenvectors, eigenvalues = load_single_cell_eigenpairs(data_dir=data_dir)
+        eigenvectors = eigenvectors.to(torch.get_default_dtype()).to(torch.get_default_device())
+        eigenvalues = eigenvalues.to(torch.get_default_dtype()).to(torch.get_default_device())
+        return eigenvectors, eigenvalues
     raise ValueError(f"Unsupported dataset: {cfg.data.name}")
 
 
@@ -143,7 +150,7 @@ def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
     data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
     if cfg.data.name == 'brain':
         L = load_brain_laplacian(data_dir=data_dir)
-        return L.to(torch.get_default_dtype())
+        return L.cpu().to(torch.float64)
     if cfg.data.name == 'gaussians_to_moons':
         if cfg.data.laplacian == 'fully_connected':
             A = torch.tensor([
@@ -157,16 +164,14 @@ def _build_laplacian(cfg: DictConfig) -> torch.Tensor:
             raise ValueError(f"Unsupported Laplacian type {cfg.data.laplacian} for dataset {cfg.data.name}")
     if cfg.data.name == 'earthquakes':
         L = load_earthquakes_laplacian(data_dir=data_dir)
-        assert L.device == torch.get_default_device()
-        return L.to(torch.get_default_dtype())
+        return L.cpu().to(torch.float64)
     if cfg.data.name in ['ocean', 'single_cell']:
         eigenvecs, eigenvalues = _build_laplacian_eigenpairs(cfg)
         return eigenvecs.to(torch.get_default_dtype()), eigenvalues.to(torch.get_default_dtype())
 
     if cfg.data.name == 'traffic':
         L = load_traffic_laplacian(data_dir=data_dir)
-        assert L.device == torch.get_default_device()
-        return L.to(torch.get_default_dtype())
+        return L.cpu().to(torch.float64)
 
     raise ValueError(f"Unsupported tensor dataset name: {cfg.data.name}")
 
@@ -184,8 +189,6 @@ def _build_frame(cfg: DictConfig) -> torch.Tensor:
         eigenvectors = eigenvectors.mT
         print(f"✅ Eigenvalues loaded: shape={eigenvalues.shape}")
         print(f"✅ Eigenvectors loaded: shape={eigenvectors.shape}")
-        eigenvectors = eigenvectors.to(torch.get_default_dtype())
-        eigenvalues = eigenvalues.to(torch.get_default_dtype())
         frame = SpectralFrame(eigenvalues=eigenvalues, eigenvectors=eigenvectors)
         print("✅ SpectralFrame created")
         return frame
@@ -193,8 +196,6 @@ def _build_frame(cfg: DictConfig) -> torch.Tensor:
     if cfg.frame.name == 'spectral' and cfg.data.name == 'single_cell':
         eigenvectors, eigenvalues = _build_laplacian(cfg)
         print(f"✅ Eigenvectors loaded: shape={eigenvectors.shape}")
-        eigenvectors = eigenvectors.to(torch.get_default_dtype())
-        eigenvalues = eigenvalues.to(torch.get_default_dtype())
         frame = SpectralFrame(eigenvalues=eigenvalues, eigenvectors=eigenvectors)
         print("✅ SpectralFrame created")
         return frame
@@ -202,7 +203,6 @@ def _build_frame(cfg: DictConfig) -> torch.Tensor:
     if cfg.frame.name == 'spectral' and cfg.data.name != 'ocean':    
         L = _build_laplacian(cfg)
         print(f"✅ Laplacian loaded: shape={L.shape}")
-        L = L.to(torch.get_default_dtype())
         frame = SpectralFrame(L)
         print("✅ SpectralFrame created")
         return frame
@@ -251,8 +251,20 @@ def _build_dataset(cfg: DictConfig, frame: Frame | None = None):
 
     if cfg.data.name == "brain":
         print("🧠 Loading brain dataset...")
-        x0, x1 = load_brain_data(data_dir=data_dir)
-        x0, x1 = x0.to(torch.get_default_dtype()), x1.to(torch.get_default_dtype())
+        # For MPS, load on CPU first to avoid float64 issues, then convert to float32 and move to target device
+        target_device = torch.get_default_device()
+        if target_device.type == 'mps':
+            # Temporarily set default device to CPU for loading
+            original_device = target_device  # Save before changing
+            torch.set_default_device(torch.device('cpu'))
+            x0, x1 = load_brain_data(data_dir=data_dir)
+            torch.set_default_device(original_device)
+            # Convert to float32 (MPS doesn't support float64) and move to target device
+            x0 = x0.to(dtype=torch.float32, device=target_device)
+            x1 = x1.to(dtype=torch.float32, device=target_device)
+        else:
+            x0, x1 = load_brain_data(data_dir=data_dir)
+            x0, x1 = x0.to(torch.get_default_dtype()), x1.to(torch.get_default_dtype())
         print(f"✅ Brain data loaded: x0 shape={x0.shape}, x1 shape={x1.shape}")
         
         print("📊 Creating Empirical distributions...")
@@ -285,20 +297,54 @@ def _build_dataset(cfg: DictConfig, frame: Frame | None = None):
 
     if cfg.data.name == 'earthquakes':
         print("📊 Creating Earthquakes dataset...")
-        x1 = load_earthquakes_data(data_dir=data_dir)
-        x1 = x1.to(torch.get_default_dtype())
+        # For MPS, load on CPU first to avoid float64 issues, then convert to float32 and move to target device
+        target_device = torch.get_default_device()
+        if target_device.type == 'mps':
+            # Temporarily set default device to CPU for loading
+            original_device = target_device  # Save before changing
+            torch.set_default_device(torch.device('cpu'))
+            x1 = load_earthquakes_data(data_dir=data_dir)
+            torch.set_default_device(original_device)
+            # Convert to float32 (MPS doesn't support float64) and move to target device
+            x1 = x1.to(dtype=torch.get_default_dtype(), device=target_device)
+        else:
+            x1 = load_earthquakes_data(data_dir=data_dir)
+            x1 = x1.to(torch.get_default_dtype()).to(target_device)
         print(f"✅ Earthquake data loaded: x1 shape={x1.shape}")
         mu1 = Empirical(x1)
         print(f"✅ Empirical distribution created")
         mu1 = EmpiricalInFrame(mu1, frame)
         print(f"✅ Wrapped Empirical distribution in EmpiricalInFrame")
 
-        mu0_mean = torch.zeros(x1.shape[-1:])
-        mu0_std = torch.full_like(mu0_mean, 1.0)
-        mu0 = torch.distributions.Normal(mu0_mean, mu0_std)
-        mu0 = torch.distributions.Independent(mu0, 1)
-        print("✅ Normal distribution created")
-        # mu0 = AnalyticInFrame(mu0, frame)
+        # Build initial distribution (mu0) based on config
+        initial_dist_type = cfg.data.get('initial_distribution', 'normal')
+        
+        if initial_dist_type == 'normal':
+            mu0_mean = torch.zeros(x1.shape[-1:])
+            mu0_std = torch.full_like(mu0_mean, 1.0)
+            mu0 = torch.distributions.Normal(mu0_mean, mu0_std)
+            mu0 = torch.distributions.Independent(mu0, 1)
+            print("✅ Normal distribution created")
+        elif initial_dist_type == 'gp':
+            # For earthquakes, use NodeGP
+            if not isinstance(frame, SpectralFrame):
+                raise ValueError("GP requires a SpectralFrame with eigenvalues and eigenvectors")
+            kappa = cfg.data.get('gp_kappa', 2.0)
+            mu0 = NodeGP(
+                eigenvectors=frame.eigenvectors,
+                eigenvalues=frame.eigenvalues,
+                kappa=kappa
+            )
+            print(f"✅ NodeGP distribution created (kappa={kappa})")
+        else:
+            raise ValueError(f"Unknown initial_distribution: {initial_dist_type}. Use 'normal' or 'gp'.")
+        
+        # Wrap in AnalyticInFrame (NodeGP can now be used directly with AnalyticInFrame)
+        if initial_dist_type == 'gp':
+            mu0 = AnalyticInFrame(mu0, frame)
+            print("✅ Initial distribution wrapped in AnalyticInFrame")
+        else:
+            print("✅ Initial distribution NOT wrapped in AnalyticInFrame")
 
         assert mu0.sample((1, )).device == mu1.sample((1, )).device == torch.get_default_device()
 
@@ -308,16 +354,140 @@ def _build_dataset(cfg: DictConfig, frame: Frame | None = None):
 
     if cfg.data.name == 'traffic':
         print("📊 Creating Traffic dataset...")
-        x1 = load_traffic_data(data_dir=data_dir)
-        x1 = x1.to(torch.get_default_dtype())
+        # For MPS, load on CPU first to avoid float64 issues, then convert to float32 and move to target device
+        target_device = torch.get_default_device()
+        if target_device.type == 'mps':
+            # Temporarily set default device to CPU for loading
+            original_device = target_device  # Save before changing
+            torch.set_default_device(torch.device('cpu'))
+            x1 = load_traffic_data(data_dir=data_dir)
+            torch.set_default_device(original_device)
+            # Convert to float32 (MPS doesn't support float64) and move to target device
+            x1 = x1.to(dtype=torch.float32, device=target_device)
+        else:
+            x1 = load_traffic_data(data_dir=data_dir)
+            x1 = x1.to(torch.get_default_dtype())
         mu1 = Empirical(x1)
         mu1 = EmpiricalInFrame(mu1, frame)
         
-        mu0_mean = torch.zeros(x1.shape[-1:])
-        mu0_std = torch.full_like(mu0_mean, 1.0)
-        mu0 = torch.distributions.Normal(mu0_mean, mu0_std)
-        mu0 = torch.distributions.Independent(mu0, 1)
-        print("✅ Normal distribution created")
+        # Build initial distribution (mu0) based on config
+        initial_dist_type = cfg.data.get('initial_distribution', 'normal')
+        
+        if initial_dist_type == 'normal':
+            mu0_mean = torch.zeros(x1.shape[-1:])
+            mu0_std = torch.full_like(mu0_mean, 1.0)
+            mu0 = torch.distributions.Normal(mu0_mean, mu0_std)
+            mu0 = torch.distributions.Independent(mu0, 1)
+            print("✅ Normal distribution created")
+        elif initial_dist_type == 'gp':
+            # For traffic, use EdgeGP
+            # Compute Hodge decomposition from Hodge Laplacian and B1
+            print("🔄 Computing Hodge decomposition for EdgeGP...")
+            target_device = torch.get_default_device()
+            
+            # Load Hodge Laplacian and B1 on CPU first
+            if target_device.type == 'mps':
+                original_device = target_device
+                torch.set_default_device(torch.device('cpu'))
+                L1 = load_traffic_laplacian(data_dir=data_dir)
+                B1 = load_traffic_b1(data_dir=data_dir)
+                torch.set_default_device(original_device)
+            else:
+                L1 = load_traffic_laplacian(data_dir=data_dir)
+                B1 = load_traffic_b1(data_dir=data_dir)
+            
+            # Convert to appropriate dtype
+            L1 = L1.to(torch.get_default_dtype())
+            B1 = B1.to(torch.get_default_dtype())
+            
+            # Compute L1_grad = B1^T @ B1 (gradient part)
+            L1_grad = B1.T @ B1
+            
+            # Compute L1_curl = L1 - L1_grad (curl part, since L1 = B1^T B1 + B2 B2^T)
+            L1_curl = L1 - L1_grad
+            
+            # Compute eigendecompositions
+            # For MPS, compute on CPU in float64, then convert
+            if target_device.type == 'mps':
+                L1_cpu = L1.cpu().to(torch.float64)
+                L1_grad_cpu = L1_grad.cpu().to(torch.float64)
+                L1_curl_cpu = L1_curl.cpu().to(torch.float64)
+                
+                # Eigendecomposition of full L1
+                L1_evals, L1_evecs = torch.linalg.eigh(L1_cpu)
+                # Eigendecomposition of gradient part
+                L1_grad_evals, L1_grad_evecs = torch.linalg.eigh(L1_grad_cpu)
+                # Eigendecomposition of curl part
+                L1_curl_evals, L1_curl_evecs = torch.linalg.eigh(L1_curl_cpu)
+                
+                # Convert back to float32 and move to device
+                L1_evals = L1_evals.to(torch.get_default_dtype()).to(target_device)
+                L1_evecs = L1_evecs.to(torch.get_default_dtype()).to(target_device)
+                L1_grad_evals = L1_grad_evals.to(torch.get_default_dtype()).to(target_device)
+                L1_grad_evecs = L1_grad_evecs.to(torch.get_default_dtype()).to(target_device)
+                L1_curl_evals = L1_curl_evals.to(torch.get_default_dtype()).to(target_device)
+                L1_curl_evecs = L1_curl_evecs.to(torch.get_default_dtype()).to(target_device)
+            else:
+                L1_evals, L1_evecs = torch.linalg.eigh(L1.to(torch.float64))
+                L1_grad_evals, L1_grad_evecs = torch.linalg.eigh(L1_grad.to(torch.float64))
+                L1_curl_evals, L1_curl_evecs = torch.linalg.eigh(L1_curl.to(torch.float64))
+                L1_evals = L1_evals.to(torch.get_default_dtype()).to(target_device)
+                L1_evecs = L1_evecs.to(torch.get_default_dtype()).to(target_device)
+                L1_grad_evals = L1_grad_evals.to(torch.get_default_dtype()).to(target_device)
+                L1_grad_evecs = L1_grad_evecs.to(torch.get_default_dtype()).to(target_device)
+                L1_curl_evals = L1_curl_evals.to(torch.get_default_dtype()).to(target_device)
+                L1_curl_evecs = L1_curl_evecs.to(torch.get_default_dtype()).to(target_device)
+            
+            # Separate into harmonic, gradient, and curl components
+            # Harmonic: eigenvectors of L1 with eigenvalue ≈ 0
+            harm_threshold = 1e-8
+            harm_mask = L1_evals < harm_threshold
+            harm_vecs = L1_evecs[:, harm_mask].T  # [num_harm, num_edges]
+            harm_vals = L1_evals[harm_mask]
+            
+            # Gradient: eigenvectors of L1_grad with eigenvalue > threshold
+            grad_mask = L1_grad_evals > harm_threshold
+            grad_vecs = L1_grad_evecs[:, grad_mask].T  # [num_grad, num_edges]
+            grad_vals = L1_grad_evals[grad_mask]
+            
+            # Curl: eigenvectors of L1_curl with eigenvalue > threshold
+            curl_mask = L1_curl_evals > harm_threshold
+            curl_vecs = L1_curl_evecs[:, curl_mask].T  # [num_curl, num_edges]
+            curl_vals = L1_curl_evals[curl_mask]
+            
+            print(f"   - Harmonic: {len(harm_vals)} components")
+            print(f"   - Gradient: {len(grad_vals)} components")
+            print(f"   - Curl: {len(curl_vals)} components")
+            
+            # Create EdgeGP
+            kappa = cfg.data.get('gp_kappa', 2.0)
+            # The distinction between grad, curl, and harm components doesn't matter,
+            # since they all have the same parameters
+            mu0 = EdgeGP(
+                grad_vecs=L1_evecs,
+                curl_vecs=L1_evecs[:0],
+                harm_vecs=L1_evecs[:0],
+                grad_vals=L1_evals,
+                curl_vals=L1_evals[:0],
+                harm_vals=L1_evals[:0],
+                gp_type='diffusion',
+                harm_sigma=1.0,
+                grad_sigma=1.0,
+                curl_sigma=1.0,
+                harm_kappa=kappa,
+                grad_kappa=kappa,
+                curl_kappa=kappa,
+            )
+            print(f"✅ EdgeGP distribution created (kappa={kappa})")
+        else:
+            raise ValueError(f"Unknown initial_distribution: {initial_dist_type}. Use 'normal' or 'gp'.")
+        
+        # FIXME: Actually, we should not wrap in AnalyticInFrame because the input may be an independent normal in frame space.
+        if initial_dist_type == 'gp':
+            mu0 = AnalyticInFrame(mu0, frame)
+            print("✅ Initial distribution wrapped in AnalyticInFrame")
+        else:
+            print("✅ Initial distribution NOT wrapped in AnalyticInFrame")
 
         dataset = AnalyticToEmpiricalDataset(mu0, mu1)
         print(f"✅ Dataset created: {type(dataset).__name__}")
@@ -325,8 +495,20 @@ def _build_dataset(cfg: DictConfig, frame: Frame | None = None):
 
     if cfg.data.name == 'single_cell':
         print("📊 Creating Single-cell dataset...")
-        x0, x1 = load_single_cell_data(data_dir=data_dir)
-        x0, x1 = x0.to(torch.get_default_dtype()), x1.to(torch.get_default_dtype())
+        # For MPS, load on CPU first to avoid float64 issues, then convert to float32 and move to target device
+        target_device = torch.get_default_device()
+        if target_device.type == 'mps':
+            # Temporarily set default device to CPU for loading
+            original_device = target_device  # Save before changing
+            torch.set_default_device(torch.device('cpu'))
+            x0, x1 = load_single_cell_data(data_dir=data_dir)
+            torch.set_default_device(original_device)
+            # Convert to float32 (MPS doesn't support float64) and move to target device
+            x0 = x0.to(dtype=torch.float32, device=target_device)
+            x1 = x1.to(dtype=torch.float32, device=target_device)
+        else:
+            x0, x1 = load_single_cell_data(data_dir=data_dir)
+            x0, x1 = x0.to(torch.get_default_dtype()), x1.to(torch.get_default_dtype())
         print(f"✅ Single-cell data loaded: x0 shape={x0.shape}, x1 shape={x1.shape}")
         
         mu0 = Empirical(x0)
@@ -346,7 +528,7 @@ def _build_dataset(cfg: DictConfig, frame: Frame | None = None):
         print("📊 Creating Ocean dataset...")
         eigenpairs = load_ocean_eigenpairs(data_dir=data_dir)
         for key in eigenpairs:
-            eigenpairs[key] = eigenpairs[key].to(torch.get_default_dtype())
+            eigenpairs[key] = eigenpairs[key].to(torch.get_default_dtype()).to(torch.get_default_device())
 
         mu0 = EdgeGP(
             grad_vecs=eigenpairs['grad_vecs'],
@@ -629,8 +811,21 @@ def _fit(
 ) -> None:
     if cfg.data.name == 'single_cell':
         data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
-        true_times = load_single_cell_true_times(data_dir=data_dir)
-        phate = load_single_cell_phate(data_dir=data_dir)
+        # For MPS, load on CPU first to avoid float64 issues, then convert to float32 and move to target device
+        target_device = torch.get_default_device()
+        if target_device.type == 'mps':
+            # Temporarily set default device to CPU for loading
+            original_device = target_device  # Save before changing
+            torch.set_default_device(torch.device('cpu'))
+            true_times = load_single_cell_true_times(data_dir=data_dir)
+            phate = load_single_cell_phate(data_dir=data_dir)
+            torch.set_default_device(original_device)
+            # Convert to float32 (MPS doesn't support float64) and move to target device
+            true_times = true_times.to(dtype=torch.float32, device=target_device)
+            phate = phate.to(dtype=torch.float32, device=target_device)
+        else:
+            true_times = load_single_cell_true_times(data_dir=data_dir)
+            phate = load_single_cell_phate(data_dir=data_dir)
         return fit__single_cell(
             sde=sde,
             model=model,
@@ -677,8 +872,21 @@ def _evaluate(
 
     if cfg.data.name == 'single_cell':
         data_dir = to_absolute_path(cfg.data.dir) if hasattr(cfg.data, 'dir') else None
-        true_times = load_single_cell_true_times(data_dir=data_dir)
-        phate = load_single_cell_phate(data_dir=data_dir)
+        # For MPS, load on CPU first to avoid float64 issues, then convert to float32 and move to target device
+        target_device = torch.get_default_device()
+        if target_device.type == 'mps':
+            # Temporarily set default device to CPU for loading
+            original_device = target_device  # Save before changing
+            torch.set_default_device(torch.device('cpu'))
+            true_times = load_single_cell_true_times(data_dir=data_dir)
+            phate = load_single_cell_phate(data_dir=data_dir)
+            torch.set_default_device(original_device)
+            # Convert to float32 (MPS doesn't support float64) and move to target device
+            true_times = true_times.to(dtype=torch.float32, device=target_device)
+            phate = phate.to(dtype=torch.float32, device=target_device)
+        else:
+            true_times = load_single_cell_true_times(data_dir=data_dir)
+            phate = load_single_cell_phate(data_dir=data_dir)
         return evaluate__single_cell(
             sde_solver=sde_solver,
             model=model,
@@ -730,12 +938,14 @@ def run_test(
         # set the mean and standard deviation of the Gaussian 
         # to be derived from the data
         train_mean = train_dataset.mu1.samples.mean(dim=0)
+        assert hasattr(train_dataset.mu0.base_dist, 'loc'), "mu0 must have a loc attribute"
         train_dataset.mu0.base_dist.loc = train_mean
         eval_dataset.mu0.base_dist.loc = train_mean
         test_dataset.mu0.base_dist.loc = train_mean
         print("✅ Set mu0 mean to training mean")
 
         train_std = train_dataset.mu1.samples.std(dim=0)
+        assert hasattr(train_dataset.mu0.base_dist, 'scale'), "mu0 must have a scale attribute"
         train_dataset.mu0.base_dist.scale = train_std
         eval_dataset.mu0.base_dist.scale = train_std
         test_dataset.mu0.base_dist.scale = train_std

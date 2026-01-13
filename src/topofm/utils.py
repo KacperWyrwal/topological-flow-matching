@@ -72,7 +72,10 @@ def joint_multinomial(
         Tuple of index tensors (i, j) each of shape (num_samples,).
     """
     n, _ = distribution.shape
-    res = torch.multinomial(distribution.flatten(), num_samples, replacement=replacement)
+    if distribution.device.type == "mps":
+        res = torch.multinomial(distribution.cpu().flatten(), num_samples, replacement=replacement).to(distribution.device)
+    else:
+        res = torch.multinomial(distribution.flatten(), num_samples, replacement=replacement)
     res_i, res_j = torch_divmod(res, n)
     return res_i, res_j
 
