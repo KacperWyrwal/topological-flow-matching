@@ -8,7 +8,6 @@ class AmbientCoordinates(Enum):
     SPECTRAL = 'spectral'
     
 
-
 class Frame:
 
     def __init__(self, eigvecs: Tensor, ambient: AmbientCoordinates | str) -> None:

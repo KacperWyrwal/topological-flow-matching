@@ -232,18 +232,8 @@ class AnalyticToAnalyticTestLoader(MatchingTestLoader):
 
 
 """
-Ocean dataset
-"""
-def load_ocean_eigenpairs(data_dir: str | None = None) -> dict[str, torch.Tensor]:
-    res = torch.load(os.path.join(data_dir, 'ocean_hodge_basis.pt'))
-    return res
-
-
-
-"""
 Traffic dataset
 """
-# data_dir = 'datasets/traffic/PEMSD4_'
 
 def load_traffic_data(data_dir: str | None = None) -> torch.Tensor:
     y = np.load(os.path.join(data_dir, 'PEMSD4_edge_features_matrix.npz'))['arr_0'].squeeze()

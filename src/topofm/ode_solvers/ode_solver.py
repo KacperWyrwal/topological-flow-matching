@@ -9,10 +9,21 @@ class _ODESolver:
         self.ode = ode
         self.n_steps = n_steps
 
-    def dx(self, t: float, xt: Tensor) -> Tensor:
+    def _odeint_func(self, t: Tensor, xt: Tensor) -> Tensor:
         """
         Args:
-            t: float
+            t: ()
+            xt: (..., d)
+        Returns:
+            dx: (..., d)
+        """
+        t = t.unsqueeze(0).unsqueeze(0)
+        return self.dx(t, xt)
+
+    def dx(self, t: Tensor, xt: Tensor) -> Tensor:
+        """
+        Args:
+            t: (...,)
             xt: (..., d)
         Returns:
             dx: (..., d)
@@ -26,8 +37,8 @@ class _ODESolver:
         Returns:
             x: (..., d)
         """
-        t = torch.tensor([0.0, 1.0])
-        return odeint(self.dx, x0, t)[-1]
+        t = x0.new_tensor([0.0, 1.0])
+        return odeint(self._odeint_func, x0, t)[-1]
 
     def x(self, x0: Tensor) -> Tensor:
         """
@@ -36,8 +47,8 @@ class _ODESolver:
         Returns:
             x: (n_steps + 1, ..., d)
         """
-        t = torch.linspace(0.0, 1.0, self.n_steps + 1)
-        return odeint(self.dx, x0, t)
+        t = torch.linspace(0.0, 1.0, self.n_steps + 1, dtype=x0.dtype, device=x0.device)
+        return odeint(self._odeint_func, x0, t)
 
 
 class _SpectralBaseODESolver:
@@ -70,6 +81,8 @@ class _SpectralBaseODESolver:
 
 class ODESolver:
     def __init__(self, ode: ODE, n_steps: int) -> None:
+        self.ode = ode
+        self.n_steps = n_steps
         if isinstance(ode, SpectralBaseODE):
             self._ode_solver = _SpectralBaseODESolver(ode=ode, n_steps=n_steps)
         else:

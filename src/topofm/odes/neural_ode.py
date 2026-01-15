@@ -1,5 +1,6 @@
-from .ode import ODE
-from ..models.model import Model, ModelMode
+from torch import Tensor
+from topofm.odes.ode import ODE
+from topofm.models.model import Model, ModelMode
 
 
 class NeuralODE(ODE):

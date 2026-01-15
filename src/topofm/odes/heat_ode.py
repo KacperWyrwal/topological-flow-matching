@@ -1,20 +1,20 @@
 import torch
 from torch import Tensor
 
-from .ode import ODE, SpectralBaseODE
-from .trivial_ode import TrivialODE
-from ..frames import Frame
+from topofm.odes.ode import ODE, SpectralBaseODE
+from topofm.odes.trivial_ode import TrivialODE
+from topofm.frames.frame import Frame
 
 
 class _PositiveEigenvalueSpectralHeatODE(ODE):
-    def __init__(self, kappa: float, eigval: Tensor) -> None:
+    def __init__(self, kappa: float, eigvals: Tensor) -> None:
         """
         Args:
             kappa: float
-            eigval: (d)
+            eigvals: (E)
         """
         super().__init__()
-        self.D = -kappa * eigval
+        self.D = -kappa * eigvals
 
     def b(self, t: Tensor, xt: Tensor) -> Tensor:
         """
@@ -93,6 +93,14 @@ class _PositiveEigenvalueSpectralHeatODE(ODE):
         )
     
     def _c_transform(self, x0: Tensor, x1: Tensor) -> tuple[Tensor, Tensor]:
+        """
+        Args:
+            x0: (..., d)
+            x1: (..., d)
+        Returns:
+            z0: (..., d)
+            z1: (..., d)
+        """
         return (
             (self.D * torch.exp(self.D) / torch.sinh(self.D)).sqrt() * x0,
             (self.D * torch.exp(-self.D) / torch.sinh(self.D)).sqrt() * x1
@@ -114,17 +122,17 @@ class _PositiveEigenvalueSpectralHeatODE(ODE):
 
 class _SpectralHeatODE(ODE):
 
-    def __init__(self, kappa: float, eigval: Tensor) -> None:
+    def __init__(self, kappa: float, eigvals: Tensor) -> None:
         """
         Args:
             kappa: float
-            eigval: (E,)
+            eigvals: (E,)
         """
         super().__init__()
         # TODO Maybe use a small epsilon instead of 0.0
-        self.zero_eigenvalue_mask = eigval == 0.0
-        safe_eigval = torch.where(self.zero_eigenvalue_mask, torch.ones_like(eigval), eigval)
-        self.positive_eigenvalue_ode = _PositiveEigenvalueSpectralHeatODE(kappa=kappa, eigval=safe_eigval)
+        self.zero_eigenvalue_mask = eigvals == 0.0
+        safe_eigvals = torch.where(self.zero_eigenvalue_mask, torch.ones_like(eigvals), eigvals)
+        self.positive_eigenvalue_ode = _PositiveEigenvalueSpectralHeatODE(kappa=kappa, eigvals=safe_eigvals)
         self.zero_eigenvalue_ode = TrivialODE()
 
     def b(self, t: Tensor, xt: Tensor) -> Tensor:
@@ -163,13 +171,13 @@ class _SpectralHeatODE(ODE):
 
 
 class HeatODE(SpectralBaseODE):
-    def __init__(self, kappa: float, eigval: Tensor, frame: Frame) -> None:
+    def __init__(self, kappa: float, eigvals: Tensor, frame: Frame) -> None:
         """
         Args:
             kappa: float
             eigval: (E,)
             frame: The frame. Either Euclidean or Spectral.
         """
-        base_ode = _SpectralHeatODE(kappa=kappa, eigval=eigval)
+        base_ode = _SpectralHeatODE(kappa=kappa, eigvals=eigvals)
         super().__init__(base_ode=base_ode, frame=frame)
         

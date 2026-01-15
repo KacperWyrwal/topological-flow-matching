@@ -1,7 +1,6 @@
-from abc import ABC
+from abc import ABC, abstractmethod
 from torch import Size, Tensor
-
-from ..distributions.boundary import BoundaryDistribution
+from topofm.distributions.boundary import BoundaryDistribution
 
 
 class Coupling(ABC):
@@ -11,7 +10,7 @@ class Coupling(ABC):
         self.mu1 = mu1
 
     @abstractmethod
-    def sample(self, shape: Size) -> tuple[Tensor, Tensor]:
+    def sample(self, shape: Size = Size([])) -> tuple[Tensor, Tensor]:
         """
         Samples from the coupling.
 

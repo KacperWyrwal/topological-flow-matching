@@ -1,6 +1,6 @@
+import torch
 from abc import ABC, abstractmethod
 from torch import Size, Tensor
-from ..frames import Frame
 
 
 class BoundaryDistribution(ABC):

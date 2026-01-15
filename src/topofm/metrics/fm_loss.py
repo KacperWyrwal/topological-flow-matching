@@ -1,8 +1,8 @@
 import torch
-from torch import Tensor
-from ..odes.ode import ODE
-from ..models.model import Model, ModelMode
-from ..distributions.time import TimeDistribution
+from torch import nn, Tensor
+from topofm.distributions.time import TimeDistribution
+from topofm.odes.ode import ODE
+from topofm.models.model import Model, ModelMode
 
 
 class FMLoss(nn.Module):
@@ -54,8 +54,8 @@ class FMLoss(nn.Module):
         batch_size = x0.shape[:-1]
 
         t = self.time_distribution.sample(batch_size)
-        x = self.ode.x(t=t, x0=x0, x1=x1)
+        xt = self.ode.x(t=t, x0=x0, x1=x1)
         target = self.target(t=t, x0=x0, x1=x1)
-        pred = self.model(t=t, x=x)
+        pred = self.model(t=t, xt=xt)
         diff = target - pred
         return torch.mean(self.weight(t=t, diff=diff).square())

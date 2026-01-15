@@ -1,23 +1,12 @@
-import math
 import numpy as np
 import torch
 from abc import abstractmethod
-
-from .model import ModelMode
-
-
-def timestep_embedding(timesteps: torch.Tensor, dim: int, max_period: int = 10000) -> torch.Tensor:
-    dim_over_2, dim_mod_2 = divmod(dim, 2)
-    freqs = torch.exp(-math.log(max_period) * torch.arange(0, dim_over_2, device=timesteps.device, dtype=timesteps.dtype) / dim_over_2)
-    args = timesteps.unsqueeze(-1) * freqs.unsqueeze(0)
-    embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
-    if dim_mod_2 == 1:
-        zero_column = embedding.new_zeros(embedding.shape[0], 1)
-        embedding = torch.cat([embedding, zero_column], dim=-1)
-    return embedding
+from torch import nn, Tensor
+from topofm.models.model import ModelMode, Model
+from topofm.models.timestep_embedding import timestep_embedding
 
 
-class FCs(torch.nn.Module):
+class FCs(nn.Module):
     def __init__(self, dim_in: int, dim_hid: int, dim_out: int, num_layers: int = 2) -> None:
         super().__init__()
         self.model = torch.nn.Sequential()
@@ -28,11 +17,11 @@ class FCs(torch.nn.Module):
             self.model.add_module(f'relu_{i}', torch.nn.ReLU())
         self.model.add_module('fc_out', torch.nn.Linear(dim_hid, dim_out))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return self.model(x)
 
 
-class ResNet_FC(torch.nn.Module):
+class ResNet_FC(nn.Module):
     def __init__(self, data_dim: int, hidden_dim: int, num_res_blocks: int) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -48,20 +37,20 @@ class ResNet_FC(torch.nn.Module):
             layers.append(torch.nn.SiLU())
         return torch.nn.Sequential(*layers)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         h = self.map(x)
         for res_block in self.res_blocks:
             h = (h + res_block(h)) / np.sqrt(2)
         return h
 
 
-class TimestepBlock(torch.nn.Module):
+class TimestepBlock(nn.Module):
     @abstractmethod
-    def forward(self, x: torch.Tensor, emb: torch.Tensor) -> torch.Tensor: ...
+    def forward(self, x: Tensor, emb: Tensor) -> Tensor: ...
 
 
-class TimestepEmbedSequential(torch.nn.Sequential, TimestepBlock):
-    def forward(self, x: torch.Tensor, emb: torch.Tensor) -> torch.Tensor:
+class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
+    def forward(self, x: Tensor, emb: Tensor) -> Tensor:
         for layer in self:
             if isinstance(layer, TimestepBlock):
                 x = layer(x, emb)
@@ -70,7 +59,7 @@ class TimestepEmbedSequential(torch.nn.Sequential, TimestepBlock):
         return x
 
 
-class ResidualNN(torch.nn.Module):
+class ResidualNN(Model):
     def __init__(self, data_dim: int, hidden_dim: int = 256, time_embed_dim: int = 128, num_res_block: int = 1, mode: ModelMode = ModelMode.V) -> None:
         super().__init__(mode=mode)
         self.time_embed_dim = time_embed_dim
@@ -87,11 +76,23 @@ class ResidualNN(torch.nn.Module):
             torch.nn.Linear(hid, data_dim),
         )
 
-    def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        t = torch.atleast_1d(t)
+    def forward(self, t: Tensor, xt: Tensor) -> Tensor:
+        """
+        Forward pass of the model.
+
+        Args:
+            t (Tensor): (n, 1) The time variable.
+            xt (Tensor): (n, data_dim) The input variable.
+
+        Returns:
+            Tensor: (n, data_dim) The output of the model.
+        """
+        assert t.ndim == 2 and t.shape[-1] == 1, "t should be of shape (batch_size, 1)"
+
+        t = t.squeeze(-1)
         t_emb = timestep_embedding(timesteps=t, dim=self.time_embed_dim)
         t_out = self.t_module(t_emb)
-        x_out = self.x_module(x)
+        x_out = self.x_module(xt)
         out = self.out_module(x_out + t_out)
         return out
 

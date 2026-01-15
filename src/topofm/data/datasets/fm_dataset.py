@@ -1,50 +1,62 @@
 import torch
 from abc import ABC, abstractmethod
-from functools import cached_property
-from ...distributions.boundary import BoundaryDistribution
-from ...frames import Frame
+from torch import Tensor
+from topofm.distributions.boundary.boundary_distribution import BoundaryDistribution
+from topofm.frames.frame import Frame
 
 
 class FMDataset(ABC):
 
-    def __init__(self, device: torch.device, dtype: torch.dtype, ambient_is_spectral: bool) -> None:
+    def __init__(
+        self,
+        mu0: BoundaryDistribution,
+        mu1: BoundaryDistribution,
+        eigvals: Tensor,
+        frame: Frame,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> None:
         super().__init__()
         self.device = device
         self.dtype = dtype
-        self.ambient_is_spectral = ambient_is_spectral
+        self.mu0 = mu0
+        self.mu1 = mu1
+        self.eigvals = eigvals
+        self.frame = frame
 
     @property
     @abstractmethod
-    def eigvec(self) -> Tensor:
+    def dim(self) -> int:
+        """
+        Returns:
+            int: The dimension of the dataset.
+        """
         pass
 
     @property
     @abstractmethod
-    def eigval(self) -> Tensor:
+    def num_samples(self) -> int:
+        """
+        Returns:
+            int: The number of samples in the dataset.
+        """
         pass
 
-    @cached_property
-    def spectral_frame(self) -> Frame:
-        return Frame(eigvec=self.eigvec)
-
-
-class MatchingDataset(FMDataset):
-    @property
+    @classmethod
     @abstractmethod
-    def mu0(self) -> BoundaryDistribution:
-        pass
+    def from_disk(cls, device: torch.device, dtype: torch.dtype):
+        """
+        Load the dataset from disk.
+        """
 
-    @property
     @abstractmethod
-    def mu1(self) -> BoundaryDistribution:
-        pass
+    def split(self, split: tuple[float, float, float] = (0.7, 0.1, 0.2)) -> tuple["FMDataset", "FMDataset", "FMDataset"]:
+        """
+        Split the dataset into training, validation, and test sets.
 
+        Args:
+            split (tuple[float, float, float]): The ratio of the dataset to be used for training, validation, and test.
 
-class GenerationDataset(FMDataset):
-    @property
-    @abstractmethod
-    def mu1(self) -> BoundaryDistribution:
-        pass
-
-
-
+        Returns:
+            tuple[FMDataset, FMDataset, FMDataset]: The training, validation, and test datasets.
+        """

@@ -1,7 +1,7 @@
 import torch
 from torch import Size, Tensor, device, dtype 
 
-from ..time_distribution import TimeDistribution
+from topofm.distributions.time.time_distribution import TimeDistribution
 
 
 class GridTimeDistribution(TimeDistribution):
@@ -11,5 +11,13 @@ class GridTimeDistribution(TimeDistribution):
         self.grid = torch.linspace(0, 1, n, requires_grad=False, device=device, dtype=dtype)
 
     def sample(self, shape: Size) -> Tensor:
+        """
+        Sample from the time distribution.
+        
+        Args:
+            shape: The shape of the sample.
+        Returns:
+            sample: (shape, 1)
+        """
         idx = torch.randint(0, len(self.grid), shape, device=self.device)
-        return self.grid[idx]
+        return self.grid[idx].unsqueeze(-1)
