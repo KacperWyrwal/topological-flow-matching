@@ -19,15 +19,18 @@ class ModelCheckpoint:
             self.dirpath.mkdir(parents=True, exist_ok=True)
 
     def save_if_best(self, model: Model, metrics: dict, step: int):
-        if not self.enabled: return
+        if not self.enabled: 
+            return
         
         score = metrics.get(self.monitor)
-        if score is None: return
+        if score is None: 
+            log.warning(f"[ModelCheckpoint] Metric {self.monitor} not found in metrics. Skipping checkpoint.")
+            return
 
         improved = (score < self.best_score) if self.mode == "min" else (score > self.best_score)
         if improved:
             self.best_score = score
-            save_path = self.dirpath / f"{self.filename}"
+            save_path = self.dirpath / self.filename
             
             torch.save({
                 "model_state_dict": model.state_dict(),

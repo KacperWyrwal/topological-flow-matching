@@ -47,37 +47,9 @@ def sample_eight_gaussians(
     return torch.as_tensor(x1).reshape(*shape, -1)
 
 
-def matmul_many(matrix: torch.Tensor, *args: torch.Tensor) -> torch.Tensor | tuple[torch.Tensor, ...]:
-    """Apply matrix multiplication along the last dimension for many tensors."""
-    results = tuple(torch.einsum("ij, ...j -> ...i", matrix, x) for x in args)
-    return results[0] if len(results) == 1 else results
-
-
 def torch_divmod(n: torch.Tensor, d: int) -> Tuple[torch.Tensor, torch.Tensor]:
     """Equivalent to Python divmod but for tensors."""
     return n // d, n % d
-
-
-def joint_multinomial(
-    distribution: torch.Tensor, num_samples: int, replacement: bool = True
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Sample joint categorical indices from a 2D distribution.
-
-    Args:
-        distribution: (N, M) tensor of probabilities.
-        num_samples: Number of samples to draw.
-        replacement: Sample with replacement.
-
-    Returns:
-        Tuple of index tensors (i, j) each of shape (num_samples,).
-    """
-    n, _ = distribution.shape
-    if distribution.device.type == "mps":
-        res = torch.multinomial(distribution.cpu().flatten(), num_samples, replacement=replacement).to(distribution.device)
-    else:
-        res = torch.multinomial(distribution.flatten(), num_samples, replacement=replacement)
-    res_i, res_j = torch_divmod(res, n)
-    return res_i, res_j
 
 
 def as_tensors(
