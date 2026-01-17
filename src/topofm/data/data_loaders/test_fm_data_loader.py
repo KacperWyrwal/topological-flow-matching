@@ -61,3 +61,6 @@ class TestFMDataLoader:
             x0 = self._take_batch(self.mu0, batch_num)
             x1 = self._take_batch(self.mu1, batch_num)
             yield x0, x1
+
+    def __len__(self) -> int:
+        return self.num_batches

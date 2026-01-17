@@ -22,10 +22,10 @@ class FCs(nn.Module):
 
 
 class ResNet_FC(nn.Module):
-    def __init__(self, data_dim: int, hidden_dim: int, num_res_blocks: int) -> None:
+    def __init__(self, input_dim: int, hidden_dim: int, num_res_blocks: int) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
-        self.map = torch.nn.Linear(data_dim, hidden_dim)
+        self.map = torch.nn.Linear(input_dim, hidden_dim)
         self.res_blocks = torch.nn.ModuleList([self.build_res_block() for _ in range(num_res_blocks)])
 
     def build_res_block(self) -> torch.nn.Sequential:
@@ -60,7 +60,7 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
 
 
 class ResidualNN(Model):
-    def __init__(self, data_dim: int, hidden_dim: int = 256, time_embed_dim: int = 128, num_res_block: int = 1, mode: ModelMode = ModelMode.V) -> None:
+    def __init__(self, input_dim: int, hidden_dim: int = 256, time_embed_dim: int = 128, num_res_block: int = 1, mode: ModelMode = ModelMode.V) -> None:
         super().__init__(mode=mode)
         self.time_embed_dim = time_embed_dim
         hid = hidden_dim
@@ -69,11 +69,11 @@ class ResidualNN(Model):
             torch.nn.SiLU(),
             torch.nn.Linear(hid, hid),
         )
-        self.x_module = ResNet_FC(data_dim, hidden_dim, num_res_blocks=num_res_block)
+        self.x_module = ResNet_FC(input_dim, hidden_dim, num_res_blocks=num_res_block)
         self.out_module = torch.nn.Sequential(
             torch.nn.Linear(hid, hid),
             torch.nn.SiLU(),
-            torch.nn.Linear(hid, data_dim),
+            torch.nn.Linear(hid, input_dim),
         )
 
     def forward(self, t: Tensor, xt: Tensor) -> Tensor:
@@ -82,10 +82,10 @@ class ResidualNN(Model):
 
         Args:
             t (Tensor): (n, 1) The time variable.
-            xt (Tensor): (n, data_dim) The input variable.
+            xt (Tensor): (n, input_dim) The input variable.
 
         Returns:
-            Tensor: (n, data_dim) The output of the model.
+            Tensor: (n, input_dim) The output of the model.
         """
         assert t.ndim == 2 and t.shape[-1] == 1, "t should be of shape (batch_size, 1)"
 

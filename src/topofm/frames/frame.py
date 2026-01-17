@@ -19,6 +19,13 @@ class Frame:
         self.eigvecs = eigvecs
         self.ambient = AmbientCoordinates(ambient)
 
+    @property
+    def ambient_dim(self) -> int:
+        if self.ambient == AmbientCoordinates.SPECTRAL:
+            return self.eigvecs.shape[1]
+        else:
+            return self.eigvecs.shape[0]
+
     def standard_to_spectral(self, x: Tensor) -> Tensor:
         """
         Args:

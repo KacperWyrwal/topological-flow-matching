@@ -6,6 +6,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+
 class ModelCheckpoint:
     def __init__(self, enabled: bool, dirpath: str, filename: str, monitor: str, mode: str = "min"):
         self.enabled = enabled
@@ -18,7 +19,18 @@ class ModelCheckpoint:
         if self.enabled:
             self.dirpath.mkdir(parents=True, exist_ok=True)
 
-    def save_if_best(self, model: Model, metrics: dict, step: int):
+    def save_if_best(self, model: Model, metrics: dict) -> None:
+        """
+        Save the model if it is the best so far.
+
+        Args:
+            model: The model to save.
+            metrics: The metrics to monitor.
+            step: The current step.
+
+        Returns:
+            None
+        """
         if not self.enabled: 
             return
         
@@ -32,10 +44,6 @@ class ModelCheckpoint:
             self.best_score = score
             save_path = self.dirpath / self.filename
             
-            torch.save({
-                "model_state_dict": model.state_dict(),
-                "step": step,
-                "metrics": metrics,
-            }, save_path)
+            torch.save(model.state_dict(), save_path)
             
             log.info(f"💾 [ModelCheckpoint] Saved new best model ({self.monitor}={score:.4f}) to {save_path}")

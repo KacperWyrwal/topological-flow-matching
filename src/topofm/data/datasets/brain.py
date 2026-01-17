@@ -16,48 +16,40 @@ def load_brain_regions_centroids(data_dir: str | None = None):
 
 class BrainDataset(FMDataset):
 
-    @property
-    def dim(self) -> int:
-        return self.mu0.samples.shape[1]
-
-    @property
-    def num_samples(self) -> int:
-        return self.mu0.samples.shape[0]
-
     @staticmethod
-    def load_data(device: torch.device, dtype: torch.dtype) -> tuple[Tensor, Tensor]:
-        x0 = torch.load(BRAIN_DATA_DIR / 'x0_liberal.pt').to(device, dtype)
-        x1 = torch.load(BRAIN_DATA_DIR / 'x1_aligned.pt').to(device, dtype)
+    def load_data() -> tuple[Tensor, Tensor]:
+        x0 = torch.load(BRAIN_DATA_DIR / 'x0_liberal.pt', map_location="cpu")
+        x1 = torch.load(BRAIN_DATA_DIR / 'x1_aligned.pt', map_location="cpu")
         return x0, x1
 
     @staticmethod
-    def load_eigvals(device: torch.device, dtype: torch.dtype) -> Tensor:
-        eigvals = torch.load(BRAIN_DATA_DIR / 'eigenvalues.pt').to(device, dtype)
+    def load_eigvals() -> Tensor:
+        eigvals = torch.load(BRAIN_DATA_DIR / 'eigenvalues.pt', map_location="cpu")
         return eigvals
 
     @staticmethod
-    def load_eigvecs(device: torch.device, dtype: torch.dtype) -> Tensor:
-        eigvecs = torch.load(BRAIN_DATA_DIR / 'eigenvectors.pt').to(device, dtype)
+    def load_eigvecs() -> Tensor:
+        eigvecs = torch.load(BRAIN_DATA_DIR / 'eigenvectors.pt', map_location="cpu")
         return eigvecs
 
     @classmethod
     def from_disk(cls, ambient: AmbientCoordinates | str, device: torch.device, dtype: torch.dtype):
-        eigvals = BrainDataset.load_eigvals(device=device, dtype=dtype)
-        eigvecs = BrainDataset.load_eigvecs(device=device, dtype=dtype)
+        eigvals = BrainDataset.load_eigvals().to(device=device, dtype=dtype)
+        eigvecs = BrainDataset.load_eigvecs().to(device=device, dtype=dtype)
+        x0, x1 = BrainDataset.load_data()
+        x0 = x0.to(device=device, dtype=dtype)
+        x1 = x1.to(device=device, dtype=dtype)
         frame = Frame(eigvecs=eigvecs, ambient=ambient)
-        x0, x1 = BrainDataset.load_data(device=device, dtype=dtype)
-        mu0 = EmpiricalDistribution.from_standard(x0, frame=frame, device=device, dtype=dtype)
-        mu1 = EmpiricalDistribution.from_standard(x1, frame=frame, device=device, dtype=dtype)
+        mu0 = EmpiricalDistribution.from_standard(x0, frame=frame)
+        mu1 = EmpiricalDistribution.from_standard(x1, frame=frame)
         return cls(
             mu0=mu0,
             mu1=mu1,
             eigvals=eigvals,
             frame=frame,
-            device=device,
-            dtype=dtype,
         )
     
-    def split(self, split: tuple[float, float, float] = (0.7, 0.1, 0.2)) -> tuple["BrainDataset", "BrainDataset", "BrainDataset"]:
+    def _split(self, split: tuple[float, float, float] = (0.7, 0.1, 0.2)) -> tuple["BrainDataset", "BrainDataset", "BrainDataset"]:
         """
         Split the dataset into training, validation, and test sets.
 
@@ -94,14 +86,14 @@ class BrainDataset(FMDataset):
         x1_test = x1[x1_train_size + x1_val_size:]
 
         # Create split distributions
-        mu0_train = EmpiricalDistribution(x0_train, frame=self.frame, device=self.device, dtype=self.dtype)
-        mu0_test = EmpiricalDistribution(x0_test, frame=self.frame, device=self.device, dtype=self.dtype)
+        mu0_train = EmpiricalDistribution(x0_train, frame=self.frame)
+        mu0_test = EmpiricalDistribution(x0_test, frame=self.frame)
 
-        mu0_val = EmpiricalDistribution(x0_val, frame=self.frame, device=self.device, dtype=self.dtype)
-        mu1_val = EmpiricalDistribution(x1_val, frame=self.frame, device=self.device, dtype=self.dtype)
+        mu0_val = EmpiricalDistribution(x0_val, frame=self.frame)
+        mu1_val = EmpiricalDistribution(x1_val, frame=self.frame)
         
-        mu1_train = EmpiricalDistribution(x1_train, frame=self.frame, device=self.device, dtype=self.dtype)
-        mu1_test = EmpiricalDistribution(x1_test, frame=self.frame, device=self.device, dtype=self.dtype)
+        mu1_train = EmpiricalDistribution(x1_train, frame=self.frame)
+        mu1_test = EmpiricalDistribution(x1_test, frame=self.frame)
         
         # Create split datasets
         return BrainDataset(
@@ -109,21 +101,15 @@ class BrainDataset(FMDataset):
             mu1=mu1_train,
             eigvals=self.eigvals,
             frame=self.frame,
-            device=self.device,
-            dtype=self.dtype,
         ), BrainDataset(
             mu0=mu0_val,
             mu1=mu1_val,
             eigvals=self.eigvals,
             frame=self.frame,
-            device=self.device,
-            dtype=self.dtype,
         ), BrainDataset(
             mu0=mu0_test,
             mu1=mu1_test,
             eigvals=self.eigvals,
             frame=self.frame,
-            device=self.device,
-            dtype=self.dtype,
         )
         

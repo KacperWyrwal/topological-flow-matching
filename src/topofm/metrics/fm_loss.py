@@ -1,6 +1,6 @@
 import torch
 from torch import nn, Tensor
-from topofm.distributions.time import TimeDistribution
+from topofm.distributions.time import UniformTimeDistribution
 from topofm.odes.ode import ODE
 from topofm.models.model import Model, ModelMode
 
@@ -12,15 +12,24 @@ class FMLoss(nn.Module):
     Args:
         ode: The ODE.
         model: The model.
-        time_distribution: The time distribution.
     """
-    def __init__(self, ode: ODE, model: Model, time_distribution: TimeDistribution) -> None:
+    def __init__(self, ode: ODE, model: Model) -> None:
         super().__init__()
         self.ode = ode
         self.model = model
-        self.time_distribution = time_distribution
+        self.time_distribution = UniformTimeDistribution()
 
     def target(self, t: Tensor, x0: Tensor, x1: Tensor) -> Tensor:
+        """
+        Target vector field.
+
+        Args:
+            t: (..., 1)
+            x0: (..., d)
+            x1: (..., d)
+        Returns:
+            target: (..., d)
+        """
         if self.model.mode == ModelMode.V:
             return self.ode.v(x0=x0, x1=x1)
         if self.model.mode == ModelMode.SV:
@@ -53,7 +62,7 @@ class FMLoss(nn.Module):
         """
         batch_size = x0.shape[:-1]
 
-        t = self.time_distribution.sample(batch_size)
+        t = self.time_distribution.sample(batch_size).to(x0.device, x0.dtype)
         xt = self.ode.x(t=t, x0=x0, x1=x1)
         target = self.target(t=t, x0=x0, x1=x1)
         pred = self.model(t=t, xt=xt)

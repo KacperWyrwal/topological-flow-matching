@@ -1,9 +1,42 @@
 import math
-from typing import Tuple
-
 import numpy as np
-import sklearn
+import random
 import torch
+from torch import nn
+from contextlib import contextmanager
+
+
+@contextmanager
+def preserve_mode(model: nn.Module) -> None:
+    """
+    Resets the model to its original training/eval mode upon exit.
+
+    Args:
+        model: The model to preserve the mode of.
+    
+    Returns:
+        None
+    """
+    was_training = model.training
+    try:
+        yield model
+    finally:
+        model.train(was_training)
+
+
+def seed_everything(seed: int) -> None:
+    """
+    Set random seed for torch, numpy, and python.
+    """
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
+
+def to_dtype(dtype: torch.dtype | str) -> torch.dtype:
+    if isinstance(dtype, str):
+        return getattr(torch, dtype)
+    return dtype
 
 
 def sample_moons(shape: torch.Size, *, noise_std: float = 0.05) -> torch.Tensor:
@@ -16,6 +49,8 @@ def sample_moons(shape: torch.Size, *, noise_std: float = 0.05) -> torch.Tensor:
     Returns:
         Tensor of shape (*shape, 2).
     """
+    import sklearn
+
     n = math.prod(shape)
     x0 = sklearn.datasets.make_moons(n_samples=n, noise=noise_std)[0]
     x0 = torch.as_tensor(x0)
@@ -45,18 +80,6 @@ def sample_eight_gaussians(
         cluster_std=noise_std,
     )[0]
     return torch.as_tensor(x1).reshape(*shape, -1)
-
-
-def torch_divmod(n: torch.Tensor, d: int) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Equivalent to Python divmod but for tensors."""
-    return n // d, n % d
-
-
-def as_tensors(
-    *args, dtype: torch.dtype | None = None, device: torch.device | None = None
-) -> tuple[torch.Tensor, ...]:
-    """Convert all arguments to torch tensors."""
-    return tuple(torch.as_tensor(arg, dtype=dtype, device=device) for arg in args)
 
 
 import scipy 

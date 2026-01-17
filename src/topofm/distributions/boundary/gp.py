@@ -19,8 +19,6 @@ class _SpectralGP(BoundaryDistribution):
         harm_kappa: float, 
         grad_kappa: float, 
         curl_kappa: float,
-        device: torch.device,
-        dtype: torch.dtype,
     ):
         """
         Args: 
@@ -31,14 +29,16 @@ class _SpectralGP(BoundaryDistribution):
             grad_evecs: [B, D]
             curl_evecs: [C, D]
         """
-        super().__init__(device=device, dtype=dtype)
+        super().__init__()
 
         # Harmonic forms
-        harm_spectral_density = GP.spectral_density(harm_sigma, harm_kappa, harm_eigvals)
-        grad_spectral_density = GP.spectral_density(grad_sigma, grad_kappa, grad_eigvals)
-        curl_spectral_density = GP.spectral_density(curl_sigma, curl_kappa, curl_eigvals)
+        harm_spectral_density = _SpectralGP.spectral_density(harm_sigma, harm_kappa, harm_eigvals)
+        grad_spectral_density = _SpectralGP.spectral_density(grad_sigma, grad_kappa, grad_eigvals)
+        curl_spectral_density = _SpectralGP.spectral_density(curl_sigma, curl_kappa, curl_eigvals)
         self._stddev = torch.concat([harm_spectral_density, grad_spectral_density, curl_spectral_density], dim=0)
         self._mean = torch.zeros_like(self._stddev)
+        self.dtype = self._stddev.dtype
+        self.device = self._stddev.device
 
     @staticmethod
     def spectral_density(sigma: float, kappa: float, eigvals: Tensor) -> Tensor:
@@ -52,7 +52,7 @@ class _SpectralGP(BoundaryDistribution):
         """
         return sigma * torch.exp(-(kappa ** 2.0 / 4.0 * eigvals))
 
-    def sample(self, shape: Size):
+    def sample(self, shape: Size = Size([])) -> Tensor:
         epsilon = torch.randn(*shape, *self._stddev.shape, dtype=self.dtype, device=self.device)
         return self._mean + self._stddev * epsilon
 
@@ -78,11 +78,9 @@ class GP(BoundaryDistribution):
         harm_kappa: float, 
         grad_kappa: float, 
         curl_kappa: float,
-        device: torch.device,
-        dtype: torch.dtype,
         frame: Frame,
     ):
-        super().__init__(device=device, dtype=dtype)
+        super().__init__()
         # TODO Find a way to indicate a requirement that the frame has the 
         # order "harmonic, gradient, curl" of eigenvectors.
         self.frame = frame
@@ -96,11 +94,9 @@ class GP(BoundaryDistribution):
             harm_kappa=harm_kappa,
             grad_kappa=grad_kappa,
             curl_kappa=curl_kappa,
-            device=device,
-            dtype=dtype,
         )
 
-    def sample(self, shape: Size):
+    def sample(self, shape: Size = Size([])) -> Tensor:
         return self.frame.spectral_to_ambient(self._spectral_gp.sample(shape))
 
 
@@ -110,8 +106,6 @@ class NodeGP(GP):
         eigvals: Tensor,
         sigma: float,
         kappa: float,
-        device: torch.device,
-        dtype: torch.dtype,
         frame: Frame,
     ) -> None:
         # TODO Maybe small eigenvalues should be rounded to zero?
@@ -134,8 +128,6 @@ class NodeGP(GP):
             harm_kappa=harm_kappa,
             grad_kappa=grad_kappa,
             curl_kappa=curl_kappa,
-            device=device,
-            dtype=dtype,
             frame=frame,
         )
         

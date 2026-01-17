@@ -13,44 +13,22 @@ class FMDataset(ABC):
         mu1: BoundaryDistribution,
         eigvals: Tensor,
         frame: Frame,
-        device: torch.device,
-        dtype: torch.dtype,
     ) -> None:
         super().__init__()
-        self.device = device
-        self.dtype = dtype
         self.mu0 = mu0
         self.mu1 = mu1
         self.eigvals = eigvals
         self.frame = frame
 
-    @property
-    @abstractmethod
-    def dim(self) -> int:
-        """
-        Returns:
-            int: The dimension of the dataset.
-        """
-        pass
-
-    @property
-    @abstractmethod
-    def num_samples(self) -> int:
-        """
-        Returns:
-            int: The number of samples in the dataset.
-        """
-        pass
-
     @classmethod
     @abstractmethod
-    def from_disk(cls, device: torch.device, dtype: torch.dtype):
+    def from_disk(cls):
         """
         Load the dataset from disk.
         """
 
     @abstractmethod
-    def split(self, split: tuple[float, float, float] = (0.7, 0.1, 0.2)) -> tuple["FMDataset", "FMDataset", "FMDataset"]:
+    def _split(self, split: tuple[float, float, float] = (0.7, 0.1, 0.2)) -> tuple["FMDataset", "FMDataset", "FMDataset"]:
         """
         Split the dataset into training, validation, and test sets.
 
@@ -60,3 +38,28 @@ class FMDataset(ABC):
         Returns:
             tuple[FMDataset, FMDataset, FMDataset]: The training, validation, and test datasets.
         """
+
+    def split(
+        self,
+        split: tuple[float, float, float] = (0.7, 0.1, 0.2),
+        seed: int | None = None,
+    ) -> tuple["FMDataset", "FMDataset", "FMDataset"]:
+        """
+        Split the dataset into training, validation, and test sets. Temporarily sets the provided random seed.
+
+        Args:
+            split (tuple[float, float, float]): The ratio of the dataset to be used for training, validation, and test.
+            seed (int | None): The seed for the random number generator.
+
+        Returns:
+            tuple[FMDataset, FMDataset, FMDataset]: The training, validation, and test datasets.
+        """
+        # Save the current random seed
+        current_seed = torch.get_rng_state()
+        torch.manual_seed(seed)
+
+        # Split the dataset
+        train, val, test = self._split(split)
+
+        torch.set_rng_state(current_seed)
+        return train, val, test

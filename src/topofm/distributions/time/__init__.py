@@ -1,3 +1,2 @@
 from .time_distribution import TimeDistribution
 from .uniform_time_distribution import UniformTimeDistribution
-from .grid_time_distribution import GridTimeDistribution

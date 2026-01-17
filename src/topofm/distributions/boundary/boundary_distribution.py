@@ -7,11 +7,6 @@ class BoundaryDistribution(ABC):
     """
     A distribution serving as either initial or final distribution in flow matching.
     """
-    def __init__(self, device: torch.device, dtype: torch.dtype) -> None:
-        super().__init__()
-        self.device = device
-        self.dtype = dtype
-
     @abstractmethod
     def sample(self, shape: Size) -> Tensor:
         """

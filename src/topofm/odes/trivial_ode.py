@@ -1,13 +1,14 @@
 import torch
 from torch import Tensor
-from .ode import ODE
+from topofm.odes.ode import ODE
+from topofm.frames.frame import Frame
 
 
 class TrivialODE(ODE):
     """
     dx_t = 0 dt
     """
-    def __init__(self) -> None:
+    def __init__(self, **kwargs) -> None:
         super().__init__()
 
     def b(self, t: Tensor, xt: Tensor) -> Tensor:

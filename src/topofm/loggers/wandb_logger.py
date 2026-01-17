@@ -4,10 +4,25 @@ from topofm.loggers.logger import Logger
 
 
 class WandbLogger(Logger):
-    def __init__(self, enabled: bool, project: str, entity: str, run_name: str, config: DictConfig):
+    def __init__(
+        self, 
+        enabled: bool, 
+        project: str, 
+        entity: str, 
+        run_name: str, 
+        run_config: DictConfig
+    ):
+        """
+        Args:
+            enabled: Whether to enable the logger.
+            project: The project name.
+            entity: The entity name.
+            run_name: The run name.
+            run_config: The configuration.
+        """
         super().__init__(enabled)
         if self.enabled:
-            wandb_config = OmegaConf.to_container(config, resolve=True)
+            wandb_config = OmegaConf.to_container(run_config, resolve=True)
             
             wandb.init(
                 project=project,
@@ -18,6 +33,11 @@ class WandbLogger(Logger):
             )
 
     def log(self, metrics: dict[str, float], step: int | None = None):
+        """
+        Args:
+            metrics: The metrics to log.
+            step: The step to log.
+        """
         if self.enabled:
             wandb.log(metrics, step=step)
 

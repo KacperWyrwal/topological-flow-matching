@@ -96,7 +96,7 @@ class _ExactOTCoupling(Coupling):
 
 
 class OTCoupling(Coupling):
-    def __init__(self, mu0: EmpiricalDistribution, mu1: EmpiricalDistribution, ode: ODE, epsilon: float = 0.001):
+    def __init__(self, mu0: EmpiricalDistribution, mu1: EmpiricalDistribution, ode: ODE, epsilon: float = 0.0):
         super().__init__(mu0=mu0, mu1=mu1)
         if epsilon == 0.0:
             self._coupling = _ExactOTCoupling(mu0=mu0, mu1=mu1, ode=ode)

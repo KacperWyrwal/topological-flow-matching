@@ -18,4 +18,6 @@ class TrainFMDataLoader:
     def __iter__(self) -> Iterator[tuple[Tensor, Tensor]]:
         for _ in range(self.num_batches):
             yield self.coupling.sample((self.batch_size,))
-        
+
+    def __len__(self) -> int:
+        return self.num_batches
