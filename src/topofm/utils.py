@@ -2,7 +2,7 @@ import math
 import numpy as np
 import random
 import torch
-from torch import nn
+from torch import nn, Tensor
 from contextlib import contextmanager
 
 
@@ -27,6 +27,12 @@ def preserve_mode(model: nn.Module) -> None:
 def seed_everything(seed: int) -> None:
     """
     Set random seed for torch, numpy, and python.
+
+    Args:
+        seed: The seed to set.
+    
+    Returns:
+        None
     """
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -34,9 +40,32 @@ def seed_everything(seed: int) -> None:
 
 
 def to_dtype(dtype: torch.dtype | str) -> torch.dtype:
+    """
+    Convert a dtype to a torch.dtype.
+
+    Args:
+        dtype: The dtype to convert.
+    
+    Returns:
+        The torch.dtype.
+    """
     if isinstance(dtype, str):
         return getattr(torch, dtype)
     return dtype
+
+
+def is_psd(x: Tensor) -> bool:
+    """
+    Check if a matrix is positive semi-definite.
+
+    Args:
+        x: The matrix to check.
+    
+    Returns:
+        True if the matrix is positive semi-definite, False otherwise.
+    """
+    _, info = torch.linalg.cholesky_ex(x)
+    return info == 0
 
 
 def sample_moons(shape: torch.Size, *, noise_std: float = 0.05) -> torch.Tensor:

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from torch import Tensor
-from ..frames import Frame
+from topofm.frames.frame import Frame
+from topofm.distributions.covariance import Covariance
 
 
 class ODE(ABC):
@@ -88,6 +89,17 @@ class ODE(ABC):
         """
         raise NotImplementedError
 
+    def Phi10(self, x: Tensor | Covariance) -> Tensor | Covariance:
+        """
+        Apply the flow od the ODE to transport x from time 1 to time 0.
+
+        Args:
+            x: (..., d)
+        Returns:
+            Phi: (..., d)
+        """
+        raise NotImplementedError
+
 
 class SpectralBaseODE(ODE):
     """
@@ -137,3 +149,8 @@ class SpectralBaseODE(ODE):
         # cost is preserved under coordinate change
         c = self.base_ode.c(x0=x0_spectral, x1=x1_spectral)
         return c
+
+    def Phi10(self, x: Tensor | Covariance) -> Tensor | Covariance:
+        x_spectral = self.frame.ambient_to_spectral(x)
+        Phi_spectral = self.base_ode.Phi10(x=x_spectral)
+        return self.frame.spectral_to_ambient(Phi_spectral)

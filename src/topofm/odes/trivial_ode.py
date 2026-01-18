@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor
 from topofm.odes.ode import ODE
-from topofm.frames.frame import Frame
+from topofm.distributions.covariance import Covariance
 
 
 class TrivialODE(ODE):
@@ -32,3 +32,6 @@ class TrivialODE(ODE):
             c: (..., n, m)
         """
         return torch.cdist(x0, x1, p=2).square()
+
+    def Phi10(self, x: Tensor | Covariance) -> Tensor | Covariance:
+        return x

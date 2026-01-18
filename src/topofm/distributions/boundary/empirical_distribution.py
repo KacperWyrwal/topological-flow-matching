@@ -1,22 +1,22 @@
 import torch
 from torch import Tensor, Size
 from topofm.distributions.boundary.boundary_distribution import BoundaryDistribution
-from topofm.frames.frame import Frame
+from topofm.spaces import Space
 
 
 class EmpiricalDistribution(BoundaryDistribution):
     """
     Empirical distribution in ambient coordinates.
     """
-    def __init__(self, samples: Tensor, frame: Frame) -> None:
+    def __init__(self, samples: Tensor, space: Space) -> None:
         """
         Args:
             samples: (n, d) samples in ambient coordinates.
-            frame: The frame to use.
+            space: The space to use.
         """
         super().__init__()
         self.samples = samples
-        self.frame = frame
+        self.space = space
         self.device = samples.device
         self.dtype = samples.dtype
 
@@ -25,9 +25,9 @@ class EmpiricalDistribution(BoundaryDistribution):
         return self.samples[idx]
 
     @classmethod
-    def from_standard(cls, samples: Tensor, frame: Frame) -> "EmpiricalDistribution":
-        samples = frame.standard_to_ambient(samples)
-        return cls(samples=samples, frame=frame)
+    def from_standard(cls, samples: Tensor, space: Space) -> "EmpiricalDistribution":
+        samples = space.frame.from_standard(samples)
+        return cls(samples=samples, space=space)
 
     @property
     def p(self) -> Tensor:

@@ -1,12 +1,19 @@
 import torch
-from torch import Tensor, Size
+from torch import Tensor, Size, distributions
 from topofm.distributions.boundary.boundary_distribution import BoundaryDistribution
+from topofm.covariance import Covariance
 
 
-class Normal(BoundaryDistribution):
-    def __init__(self, mean: Tensor, stddev: Tensor, device: torch.device, dtype: torch.dtype) -> None:
-        super().__init__(device=device, dtype=dtype)
-        self._dist = torch.distributions.Normal(mean, stddev)
+class MultivariateNormal(BoundaryDistribution):
+    def __init__(
+        self, 
+        mean: Tensor, 
+        cov: Tensor | Covariance, 
+    ) -> None:
+        super().__init__()
+        if isinstance(cov, Covariance):
+            cov = cov.matrix
+        self._base_dist = distributions.MultivariateNormal(mean, cov)
 
-    def sample(self, shape: Size) -> Tensor:
-        return self._dist.sample(shape)
+    def sample(self, shape: Size = Size([])) -> Tensor:
+        return self._base_dist.sample(shape)

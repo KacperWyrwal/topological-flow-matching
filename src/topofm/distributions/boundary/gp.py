@@ -78,12 +78,12 @@ class GP(BoundaryDistribution):
         harm_kappa: float, 
         grad_kappa: float, 
         curl_kappa: float,
-        frame: Frame,
+        space: Space,
     ):
         super().__init__()
         # TODO Find a way to indicate a requirement that the frame has the 
         # order "harmonic, gradient, curl" of eigenvectors.
-        self.frame = frame
+        self.space = space
         self._spectral_gp = _SpectralGP(
             grad_eigvals=grad_eigvals,
             curl_eigvals=curl_eigvals,
@@ -97,7 +97,7 @@ class GP(BoundaryDistribution):
         )
 
     def sample(self, shape: Size = Size([])) -> Tensor:
-        return self.frame.spectral_to_ambient(self._spectral_gp.sample(shape))
+        return self.space.frame.from_spectral(self._spectral_gp.sample(shape))
 
 
 class NodeGP(GP):
@@ -106,7 +106,7 @@ class NodeGP(GP):
         eigvals: Tensor,
         sigma: float,
         kappa: float,
-        frame: Frame,
+        space: Space,
     ) -> None:
         # TODO Maybe small eigenvalues should be rounded to zero?
         harm_eigvals = eigvals[eigvals == 0.0]
@@ -128,6 +128,6 @@ class NodeGP(GP):
             harm_kappa=harm_kappa,
             grad_kappa=grad_kappa,
             curl_kappa=curl_kappa,
-            frame=frame,
+            space=space,
         )
         

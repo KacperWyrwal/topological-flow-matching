@@ -1,50 +1,65 @@
 from torch import Tensor
 from topofm.config import DATA_DIR
-from topofm.distributions.boundary.GP import NodeGP
-from topofm.data.datasets.fm_dataset import FMDataset
-from topofm.frames.frame import Frame, AmbientCoordinates
-from topofm.distributions.empirical import EmpiricalDistribution
+from topofm.data.datasets.fm_dataset import GenerationDataset
+from topofm.frames import Coordinates
+from topofm.distributions.boundary import EmpiricalDistribution
+from topofm.spaces import Space
 
 
 EARTHQUAKES_DATA_DIR = DATA_DIR / "earthquakes"
 
 
-class EarthquakesDataset(FMDataset):
+class EarthquakesGraph(Space):
+
+    def __init__(
+        self, 
+        coords: Coordinates | str,
+        dtype: torch.dtype,
+        device: torch.device,
+        ) -> None:
+        eigvals = self.load_eigvals().to(device=device, dtype=dtype)
+        eigvecs = self.load_eigvecs().to(device=device, dtype=dtype)
+        super().__init__(eigvals=eigvals, eigvecs=eigvecs, coords=coords)
+
+    def load_eigvals(self) -> Tensor:
+        return torch.load(EARTHQUAKES_DATA_DIR / 'eigenvalues.pt', map_location="cpu")
+
+    def load_eigvecs(self) -> Tensor:
+        return torch.load(EARTHQUAKES_DATA_DIR / 'eigenvectors.pt', map_location="cpu")
+
+
+class EarthquakesDataset(GenerationDataset):
 
     @staticmethod
-    def load_data(device: torch.device, dtype: torch.dtype) -> Tensor:
-        return torch.load(EARTHQUAKES_DATA_DIR / 'x1.pt').to(device=device, dtype=dtype)
-
-    @staticmethod
-    def load_eigvals(device: torch.device, dtype: torch.dtype) -> Tensor:
-        return torch.load(EARTHQUAKES_DATA_DIR / 'eigenvalues.pt').to(device=device, dtype=dtype)
-
-    @staticmethod
-    def load_eigvecs(device: torch.device, dtype: torch.dtype) -> Tensor:
-        return torch.load(EARTHQUAKES_DATA_DIR / 'eigenvectors.pt').to(device=device, dtype=dtype)
-
+    def load_data() -> Tensor:
+        return torch.load(EARTHQUAKES_DATA_DIR / 'x1.pt')
 
     @classmethod
     def from_disk(
         cls,
-        mu0_kappa: float,
-        ambient: AmbientCoordinates | str,
+        space: EarthquakesGraph,
+        ode: ODE,
         device: torch.device,
         dtype: torch.dtype,
-    ) -> FMDataset:
-        eigvals = EarthquakesDataset.load_eigvals(device=device, dtype=dtype)
-        eigvecs = EarthquakesDataset.load_eigvecs(device=device, dtype=dtype)
-        frame = Frame(eigvec=eigvecs, ambient=ambient)
-        x1 = EarthquakesDataset.load_data(device=device, dtype=dtype)
-        mu1 = EmpiricalDistribution(x1, frame=frame)
-        mu0 = NodeGP(
-            eigvals=eigvals,
-            sigma=1.0, # Could be a good place to estimate the mean and variance from data
-            kappa=mu0_kappa,
-            frame=frame,
-        )
-        return cls(mu0=mu0, mu1=mu1, eigvals=eigvals, frame=frame, device=device, dtype=dtype)
+        mode: Literal['full', 'identity'] = 'full',
+    ) -> "EarthquakesDataset":
+        x1 = EarthquakesDataset.load_data().to(device=device, dtype=dtype)
+        mu1 = EmpiricalDistribution(x1, space=space)
+        mu0 = cls._backward_transport_mu0(mu1, ode, mode=mode) 
+        return cls(mu0=mu0, mu1=mu1)
 
-    @classmethod
-    def train_test_split(cls, test_size: float = 0.2) -> tuple[FMDataset, FMDataset]:
-        pass
+    def _split(
+        self, 
+        split: tuple[float, float, float] = (0.7, 0.1, 0.2),
+        seed: int | None = None,
+    ) -> tuple["EarthquakesDataset", "EarthquakesDataset", "EarthquakesDataset"]:
+        """
+        Split the dataset into training, validation, and test sets.
+
+        Args:
+            split (tuple[float, float, float]): The ratio of the dataset to be used for training, validation, and test.
+
+        Returns:
+            tuple[EarthquakesDataset, EarthquakesDataset, EarthquakesDataset]: The training, validation, and test datasets.
+        """
+        return self, self, self

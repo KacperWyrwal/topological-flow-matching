@@ -1,9 +1,10 @@
 import torch
 from abc import ABC, abstractmethod
-from torch import Tensor
-from topofm.distributions.boundary.boundary_distribution import BoundaryDistribution
-from topofm.frames.frame import Frame
-
+from topofm.distributions.boundary import BoundaryDistribution
+from topofm.spaces import Space
+from topofm.odes import ODE
+from topofm.covariance import Covariance
+from topofm.distributions.boundary.normal import MultivariateNormal
 
 class FMDataset(ABC):
 
@@ -11,14 +12,10 @@ class FMDataset(ABC):
         self,
         mu0: BoundaryDistribution,
         mu1: BoundaryDistribution,
-        eigvals: Tensor,
-        frame: Frame,
     ) -> None:
         super().__init__()
         self.mu0 = mu0
         self.mu1 = mu1
-        self.eigvals = eigvals
-        self.frame = frame
 
     @classmethod
     @abstractmethod
@@ -63,3 +60,32 @@ class FMDataset(ABC):
 
         torch.set_rng_state(current_seed)
         return train, val, test
+
+
+class GenerationDataset(FMDataset):
+    @staticmethod
+    def _backward_transport_mu0(
+        mu1: EmpiricalDistribution,
+        ode: ODE,
+        mode: Literal['full', 'identity'] = 'full',
+    ) -> EmpiricalDistribution:
+        """
+        Transport the final distribution backwards in time.
+        TODO Could make this a method of the ODE class, and 
+        have the dataset simply pass it an appropriate normal distribution.
+        Args:
+            mu1 (EmpiricalDistribution): The final distribution.
+            ode (ODE): The ODE to use for backward transport.
+            mode (Literal['full', 'identity']): The mode to use for backward transport.
+            If 'full', the full covariance matrix of mu1 is transported backwards, otherwise
+            the identity matrix is transported. TODO could add a 'diagonal' mode.
+
+        Returns:
+            MultivariateNormal: The initial distribution.
+        """
+        mean = torch.mean(mu1.samples, dim=0)
+        cov = Covariance.from_samples(mu1.samples, mode=mode)
+        cov = ode.Phi10(cov)
+        mu0 = MultivariateNormal(mean, cov)
+        return mu0
+        
