@@ -1,6 +1,4 @@
-name: residual_nn
+_target_: topofm.models.residual_nn.ResidualNN
 hidden_dim: 256
 time_embed_dim: 128
 num_res_block: 1
-
-

@@ -14,6 +14,6 @@ class BatchwiseOTCoupling(Coupling):
     def sample(self, shape: Size = Size([])) -> tuple[Tensor, Tensor]:
         x0 = self.mu0.sample(shape=shape)
         x1 = self.mu1.sample(shape=shape)
-        mu0 = EmpiricalDistribution(samples=x0, frame=self.mu0.frame)
-        mu1 = EmpiricalDistribution(samples=x1, frame=self.mu1.frame)
+        mu0 = EmpiricalDistribution(samples=x0, space=self.mu0.space)
+        mu1 = EmpiricalDistribution(samples=x1, space=self.mu1.space)
         return self.ot_coupling(mu0=mu0, mu1=mu1).sample(shape=shape)

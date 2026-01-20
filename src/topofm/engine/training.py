@@ -8,6 +8,8 @@ from topofm.metrics import FMLoss
 from topofm.models import Model
 from topofm.loggers import Logger
 from topofm.odes import ODE
+from topofm.frames import Coordinates
+from topofm.spaces import Space
 
 
 def train(
@@ -19,6 +21,8 @@ def train(
     early_stopping: EarlyStopping,
     model_checkpoint: ModelCheckpoint,
     logger: Logger,
+    space: Space,
+    eval_coords: Coordinates | str,
     val_every_n_samples: int | None = None,
 ) -> None:
     """
@@ -34,11 +38,13 @@ def train(
         early_stopping: The early stopping callback.
         model_checkpoint: The model checkpoint callback.
         logger: The logger to use.
+        space: The space to use.
+        eval_coords: The coordinates to use for evaluation.
         val_every_n_samples: The frequency of validation steps.
-    
     Returns:
         None
     """
+    eval_coords = Coordinates(eval_coords)
     with preserve_mode(model):
         model.train()
 
@@ -65,7 +71,13 @@ def train(
 
             # Maybe validation step
             if samples_processed >= next_val_threshold:
-                metrics = evaluate(model=model, ode=ode, data_loader=val_loader)
+                metrics = evaluate(
+                    model=model,
+                    ode=ode,
+                    data_loader=val_loader,
+                    train_space=space,
+                    eval_coords=eval_coords,
+                )
 
                 # Log validation metrics
                 logger.log({f'val/{m}': v for m, v in metrics.items()}, step=samples_processed)

@@ -1,4 +1,3 @@
-enabled: true
-ratio: 0.2
-batch_size: 512
-epoch_size: 8096
+batch_size: ${train.batch_size}
+num_samples: 4096
+coords: standard

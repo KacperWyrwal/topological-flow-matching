@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor, Size
-from .boundary_distribution import BoundaryDistribution
-from ...frames import Frame
+from topofm.distributions.boundary.boundary_distribution import BoundaryDistribution
+from topofm.spaces import Space
 
 
 class _SpectralGP(BoundaryDistribution):

@@ -1,0 +1,2 @@
+_target_: topofm.couplings.batchwise_ot_coupling.BatchwiseOTCoupling
+ode: ${ode}

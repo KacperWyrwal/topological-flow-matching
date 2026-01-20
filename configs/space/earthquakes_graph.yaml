@@ -1,0 +1,4 @@
+_target_: topofm.data.datasets.earthquakes.EarthquakesGraph.from_disk
+coords: ${coords}
+dtype: ${dtype}
+device: ${device}

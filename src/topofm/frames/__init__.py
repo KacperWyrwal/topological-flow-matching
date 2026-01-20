@@ -1,1 +1,1 @@
-from .frame import Frame, Cooridnates
+from .frame import Frame, Coordinates

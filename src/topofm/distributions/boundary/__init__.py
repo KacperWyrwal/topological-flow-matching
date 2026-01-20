@@ -1,4 +1,4 @@
-from .boundary_distribution import BoundaryDistribution
-from .empirical_distribution import EmpiricalDistribution
-from .normal import Normal
-from .gp import GP, NodeGP
+from topofm.distributions.boundary.boundary_distribution import BoundaryDistribution
+from topofm.distributions.boundary.empirical_distribution import EmpiricalDistribution
+from topofm.distributions.boundary.normal import MultivariateNormal
+from topofm.distributions.boundary.gp import GP

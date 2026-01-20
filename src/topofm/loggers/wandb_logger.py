@@ -10,7 +10,8 @@ class WandbLogger(Logger):
         project: str, 
         entity: str, 
         run_name: str, 
-        run_config: DictConfig
+        run_config: DictConfig,
+        tags: list[str] | None = None,
     ):
         """
         Args:
@@ -29,6 +30,7 @@ class WandbLogger(Logger):
                 entity=entity,
                 name=run_name,
                 config=wandb_config,
+                tags=tags,
                 reinit=True
             )
 

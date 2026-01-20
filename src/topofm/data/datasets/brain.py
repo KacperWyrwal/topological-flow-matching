@@ -5,6 +5,8 @@ from topofm.config import DATA_DIR
 from topofm.data.datasets.fm_dataset import FMDataset
 from topofm.distributions.boundary.empirical_distribution import EmpiricalDistribution
 from topofm.spaces import Space
+from topofm.frames.frame import Coordinates
+from topofm.utils import to_dtype, to_device
 
 
 BRAIN_DATA_DIR = DATA_DIR / "brain"
@@ -15,22 +17,25 @@ def load_brain_regions_centroids() -> pd.DataFrame:
 
 
 class BrainGraph(Space):
-    # TODO Inherit from spaces.Graph, which should store a graph structure
-    # optionally with nodes, edges, and node coordinates.
-    def __init__(
-        self, 
-        coords: Coordinates | str, 
-        dtype: torch.dtype, 
-        device: torch.device,
-    ) -> None:
-        eigvals = self.load_eigvals().to(device=device, dtype=dtype)
-        eigvecs = self.load_eigvecs().to(device=device, dtype=dtype)
-        super().__init__(eigvals=eigvals, eigvecs=eigvecs, coords=coords)
+    @classmethod
+    def from_disk(
+        cls,
+        coords: Coordinates | str,
+        dtype: torch.dtype | str,
+        device: torch.device | str,
+    ) -> "BrainGraph":
+        dtype = to_dtype(dtype)
+        device = to_device(device)
+        eigvals = BrainGraph.load_eigvals().to(device=device, dtype=dtype)
+        eigvecs = BrainGraph.load_eigvecs().to(device=device, dtype=dtype)
+        return cls(eigvals=eigvals, eigvecs=eigvecs, coords=coords)
 
-    def load_eigvals(self) -> Tensor:
+    @staticmethod
+    def load_eigvals() -> Tensor:
         return torch.load(BRAIN_DATA_DIR / 'eigenvalues.pt', map_location="cpu")
 
-    def load_eigvecs(self) -> Tensor:
+    @staticmethod
+    def load_eigvecs() -> Tensor:
         return torch.load(BRAIN_DATA_DIR / 'eigenvectors.pt', map_location="cpu")
 
 
@@ -46,26 +51,28 @@ class BrainDataset(FMDataset):
     def from_disk(
         cls,
         space: BrainGraph,
-        ode: ODE,
-        device: torch.device, 
-        dtype: torch.dtype,
+        device: torch.device | str,
+        dtype: torch.dtype | str,
     ) -> "BrainDataset":
+        dtype = to_dtype(dtype)
+        device = to_device(device)
         x0, x1 = BrainDataset.load_data()
         x0 = x0.to(device=device, dtype=dtype)
         x1 = x1.to(device=device, dtype=dtype)
         mu0 = EmpiricalDistribution.from_standard(x0, space=space)
         mu1 = EmpiricalDistribution.from_standard(x1, space=space)
-        return cls(
-            mu0=mu0,
-            mu1=mu1,
-        )
+        return cls(mu0=mu0, mu1=mu1)
     
-    def _split(self, split: tuple[float, float, float] = (0.7, 0.1, 0.2)) -> tuple["BrainDataset", "BrainDataset", "BrainDataset"]:
+    def _split(
+        self, 
+        ratio: tuple[float, float, float] = (0.7, 0.1, 0.2),
+        **kwargs,
+    ) -> tuple["BrainDataset", "BrainDataset", "BrainDataset"]:
         """
         Split the dataset into training, validation, and test sets.
 
         Args:
-            split (tuple[float, float, float]): The ratio of the dataset to be used for training, validation, and test.
+            ratio (tuple[float, float, float]): The ratio of the dataset to be used for training, validation, and test.
 
         Returns:
             tuple[BrainDataset, BrainDataset, BrainDataset]: The training, validation, and test datasets.
@@ -83,7 +90,7 @@ class BrainDataset(FMDataset):
 
         # Split into train, validation, and test
         total_size = x0.shape[0]
-        train_size, val_size, test_size = split
+        train_size, val_size, test_size = ratio
         x0_train_size = int(train_size * total_size)
         x0_val_size = int(val_size * total_size)
         x0_train = x0[:x0_train_size]
@@ -106,14 +113,8 @@ class BrainDataset(FMDataset):
         mu1_test = EmpiricalDistribution(x1_test, space=self.mu1.space)
         
         # Create split datasets
-        return BrainDataset(
-            mu0=mu0_train,
-            mu1=mu1_train,
-        ), BrainDataset(
-            mu0=mu0_val,
-            mu1=mu1_val,
-        ), BrainDataset(
-            mu0=mu0_test,
-            mu1=mu1_test,
+        return (
+            BrainDataset(mu0=mu0_train, mu1=mu1_train),
+            BrainDataset(mu0=mu0_val, mu1=mu1_val),
+            BrainDataset(mu0=mu0_test, mu1=mu1_test),
         )
-        

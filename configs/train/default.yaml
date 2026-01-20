@@ -1,3 +1,28 @@
-num_epochs: 100
+defaults:
+  - coupling: independent
+  - optimizer: adamw
+  - _self_
+
+num_samples: 10000000
 batch_size: 512
-epoch_size: 25600
+
+early_stopping:
+  _target_: topofm.callbacks.EarlyStopping
+  enabled: true
+  patience: 10
+  monitor: w1
+  mode: min
+
+checkpoint:
+  _target_: topofm.callbacks.ModelCheckpoint
+  enabled: true
+  monitor: w1
+  mode: min
+  dirpath: ${hydra:runtime.output_dir}/checkpoints
+  filename: model.pt
+
+val:
+  every_n_samples: ${mult:${train.batch_size}, 50.0}
+  batch_size: ${train.batch_size}
+  num_samples: 512
+  coords: standard

@@ -1,0 +1,12 @@
+_target_: topofm.loggers.wandb_logger.WandbLogger
+_recursive_: false
+enabled: true
+project: topological-flow-matching
+entity: kacper-wyrwal-university-of-oxford
+run_name: ${hydra:runtime.choices.experiment}-kappa=${ode.kappa}-seed=${seed}
+tags: 
+  - experiment=${hydra:runtime.choices.experiment}
+  - kappa=${ode.kappa}
+  - seed=${seed}
+  - model=${hydra:runtime.choices.model}
+  - coupling=${hydra:runtime.choices.train.coupling}

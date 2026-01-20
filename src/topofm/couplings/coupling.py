@@ -4,7 +4,7 @@ from topofm.distributions.boundary import BoundaryDistribution
 
 
 class Coupling(ABC):
-    def __init__(self, mu0: BoundaryDistribution, mu1: BoundaryDistribution, **kwargs) -> None:
+    def __init__(self, mu0: BoundaryDistribution, mu1: BoundaryDistribution) -> None:
         super().__init__()
         self.mu0 = mu0
         self.mu1 = mu1

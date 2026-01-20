@@ -1,1 +1,2 @@
-name: ot
+_target_: topofm.couplings.ot_coupling.OTCoupling
+ode: ${ode}

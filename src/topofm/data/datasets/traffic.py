@@ -2,22 +2,42 @@
 Traffic dataset
 """
 import torch 
+from typing import Literal
 from torch import Tensor
 from topofm.config import DATA_DIR
 from topofm.data.datasets.fm_dataset import GenerationDataset
+from topofm.distributions.boundary import EmpiricalDistribution, MultivariateNormal
+from topofm.spaces import Space
+from topofm.frames.frame import Coordinates
+from topofm.odes.ode import ODE
+from topofm.utils import to_device, to_dtype
 
 
 TRAFFIC_DATA_DIR = DATA_DIR / "traffic"
 
 
-def load_traffic_data(data_dir: str | None = None) -> torch.Tensor:
-    y = np.load(os.path.join(data_dir, 'PEMSD4_edge_features_matrix.npz'))['arr_0'].squeeze()
-    return torch.as_tensor(y)
+class TrafficComplex(Space):
 
+    @classmethod
+    def from_disk(
+        cls,
+        coords: Coordinates | str,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> "TrafficComplex":
+        dtype = to_dtype(dtype)
+        device = to_device(device)
+        eigvals = TrafficComplex.load_eigvals().to(device=device, dtype=dtype)
+        eigvecs = TrafficComplex.load_eigvecs().to(device=device, dtype=dtype)
+        return cls(eigvals=eigvals, eigvecs=eigvecs, coords=coords)
 
-def load_traffic_laplacian(data_dir: str | None = None) -> torch.Tensor:
-    L = np.load(os.path.join(data_dir, 'PEMSD4_hodge_Laplacian.npz'))['arr_0']
-    return torch.as_tensor(L, device='cpu', dtype=torch.float64)
+    @staticmethod
+    def load_eigvals() -> Tensor:
+        return torch.load(TRAFFIC_DATA_DIR / 'eigenvalues.pt', map_location="cpu")
+
+    @staticmethod
+    def load_eigvecs() -> Tensor:
+        return torch.load(TRAFFIC_DATA_DIR / 'eigenvectors.pt', map_location="cpu")
 
 
 def load_traffic_b1(data_dir: str | None = None) -> torch.Tensor:
@@ -26,64 +46,79 @@ def load_traffic_b1(data_dir: str | None = None) -> torch.Tensor:
 
 
 class TrafficDataset(GenerationDataset):
-    def __init__(self, mu0_kappa: float, ambient: AmbientCoordinates | str, device: torch.device, dtype: torch.dtype) -> None:
-        super().__init__(device=device, dtype=dtype)
-        harm_eigvals, grad_eigvals, curl_eigvals = TrafficDataset.load_eigvals(device, dtype)
-        harm_eigvecs, grad_eigvecs, curl_eigvecs = TrafficDataset.load_eigvecs(device, dtype)
-        # Important to be in the order harmonic, gradient, curl
-        eigvecs = torch.concat([harm_eigvecs, grad_eigvecs, curl_eigvecs], dim=-1)
-        eigvals = torch.concat([harm_eigvals, grad_eigvals, curl_eigvals], dim=-1)
-        frame = Frame(eigvecs=eigvecs, ambient=ambient)
-        mu0 = GP(
-            harm_sigma=1.0,
-            grad_sigma=1.0,
-            curl_sigma=1.0,
-            harm_kappa=mu0_kappa,
-            grad_kappa=mu0_kappa,
-            curl_kappa=mu0_kappa,
-            harm_eigvals=harm_eigvals,
-            grad_eigvals=grad_eigvals,
-            curl_eigvals=curl_eigvals,
-            frame=frame,
+
+    @staticmethod
+    def load_data() -> Tensor:
+        return torch.load(TRAFFIC_DATA_DIR / "x1.pt")
+
+    @classmethod
+    def from_disk(
+        cls,
+        space: TrafficComplex,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> "TrafficDataset":
+        dtype = to_dtype(dtype)
+        device = to_device(device)
+        x1 = TrafficDataset.load_data().to(device=device, dtype=dtype)
+        mu1 = EmpiricalDistribution(x1, space=space)
+        mu0 = MultivariateNormal(
+            mean=torch.zeros(space.dim, dtype=dtype, device=device),
+            cov=torch.eye(space.dim, dtype=dtype, device=device),
+            space=space,
         )
-        x1 = TrafficDataset.load_data(device, dtype)
-        mu1 = EmpiricalDistribution(x1, frame=frame)
-        self._mu0 = mu0
-        self._mu1 = mu1
-        self._frame = frame
-        self._eigvals = eigvals
+        return cls(mu0=mu0, mu1=mu1)
 
-    @property
-    def eigvals(self) -> Tensor:
-        return self._eigvals
+    def _split(
+        self, 
+        ratio: tuple[float, float, float] = (0.7, 0.1, 0.2),
+        mu0_covariance_mode: Literal['full', 'diagonal', 'identity'] = 'full',
+        mu0_backward_transport: bool = False,
+        ode: ODE | None = None,
+    ) -> tuple["TrafficDataset", "TrafficDataset", "TrafficDataset"]:
+        """
+        Split the dataset into training, validation, and test sets.
 
-    @property
-    def frame(self) -> Frame:
-        return self._frame
+        Args:
+            ratio (tuple[float, float, float]): The ratio of the dataset to be used for training, validation, and test.
 
-    @property
-    def mu0(self) -> GP:
-        return self._mu0
+        Returns:
+            tuple[TrafficDataset, TrafficDataset, TrafficDataset]: The training, validation, and test datasets.
+        """
+        x1 = self.mu1.samples
 
-    @property
-    def mu1(self) -> EmpiricalDistribution:
-        return self._mu1
+        # Shuffle samples
+        idx1 = torch.randperm(x1.shape[0])
+        x1 = x1[idx1]
 
-    @staticmethod
-    def load_data(device: torch.device, dtype: torch.dtype) -> torch.Tensor:
-        return torch.load(TRAFFIC_DATA_DIR / "x1.pt").to(device=device, dtype=dtype)
+        # Split into train, validation, and test
+        total_size = x1.shape[0]
+        train_size, val_size, test_size = ratio
+        x1_train_size = int(train_size * total_size)
+        x1_val_size = int(val_size * total_size)
+        x1_train = x1[:x1_train_size]
+        x1_val = x1[x1_train_size:x1_train_size + x1_val_size]
+        x1_test = x1[x1_train_size + x1_val_size:]
+
+        # Create split distributions
+        mu1_train = EmpiricalDistribution(x1_train, space=self.mu1.space)
+        mu1_val = EmpiricalDistribution(x1_val, space=self.mu1.space)
+        mu1_test = EmpiricalDistribution(x1_test, space=self.mu1.space)
+
+        # Create the initial distribution from training set statistics
+        mu0_train = self._mu0_from_mu1(
+            mu1=mu1_train,
+            covariance_mode=mu0_covariance_mode,
+            transport=mu0_backward_transport,
+            ode=ode,
+        )
+        mu0_val = mu0_train
+        mu0_test = mu0_train
         
-    @staticmethod
-    def load_eigvals(device: torch.device, dtype: torch.dtype) -> tuple[Tensor, Tensor, Tensor]:
-        harm_eigvals = torch.load(TRAFFIC_DATA_DIR / "harmonic_eigenvaluess.pt").to(device, dtype)
-        grad_eigvals = torch.load(TRAFFIC_DATA_DIR / "gradient_eigenvaluess.pt").to(device, dtype)
-        curl_eigvals = torch.load(TRAFFIC_DATA_DIR / "curl_eigenvaluess.pt").to(device, dtype)
-        return harm_eigvals, grad_eigvals, curl_eigvals
-
-    @staticmethod
-    def load_eigvecs(device: torch.device, dtype: torch.dtype) -> tuple[Tensor, Tensor, Tensor]:
-        harm_eigvecs = torch.load(TRAFFIC_DATA_DIR / "harmonic_eigenvectors.pt").to(device, dtype)
-        grad_eigvecs = torch.load(TRAFFIC_DATA_DIR / "gradient_eigenvectors.pt").to(device, dtype)
-        curl_eigvecs = torch.load(TRAFFIC_DATA_DIR / "curl_eigenvectors.pt").to(device, dtype)
-        return harm_eigvecs, grad_eigvecs, curl_eigvecs
+        # Create split datasets
+        return (
+            TrafficDataset(mu0=mu0_train, mu1=mu1_train),
+            TrafficDataset(mu0=mu0_val, mu1=mu1_val),
+            TrafficDataset(mu0=mu0_test, mu1=mu1_test),
+        )
     

@@ -52,7 +52,7 @@ class _ODESolver:
 class _SpectralBaseODESolver:
     def __init__(self, ode: SpectralBaseODE) -> None:
         self._ode_solver = _ODESolver(ode=ode.base_ode)
-        self.frame = ode.frame
+        self.space = ode.space
 
     def x1(self, x0: Tensor) -> Tensor:
         """
@@ -61,9 +61,9 @@ class _SpectralBaseODESolver:
         Returns:
             x: (..., d)
         """
-        y0 = self.frame.ambient_to_spectral(x0)
+        y0 = self.space.frame.to_spectral(x0)
         y1 = self._ode_solver.x1(x0=y0)
-        return self.frame.spectral_to_ambient(y1)
+        return self.space.frame.from_spectral(y1)
 
     def x(self, t: Tensor, x0: Tensor) -> Tensor:
         """
@@ -73,9 +73,9 @@ class _SpectralBaseODESolver:
         Returns:
             x: (..., d)
         """
-        y0 = self.frame.ambient_to_spectral(x0)
+        y0 = self.space.frame.to_spectral(x0)
         y = self._ode_solver.x(t=t, x0=y0)
-        return self.frame.spectral_to_ambient(y)
+        return self.space.frame.from_spectral(y)
 
 
 class ODESolver:

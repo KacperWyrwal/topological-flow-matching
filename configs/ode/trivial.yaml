@@ -1,0 +1,2 @@
+_target_: topofm.odes.trivial_ode.TrivialODE
+kappa: 0.0 # This is just for convenience in plotting later

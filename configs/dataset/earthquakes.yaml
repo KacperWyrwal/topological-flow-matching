@@ -1,0 +1,9 @@
+defaults:
+  - override /space@_global_.space: earthquakes_graph
+  - override /split@_global_.split: generation
+  - _self_
+
+_target_: topofm.data.datasets.earthquakes.EarthquakesDataset.from_disk
+dtype: ${dtype}
+device: ${device}
+space: ${space}

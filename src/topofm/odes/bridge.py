@@ -14,10 +14,10 @@ class _Bridge(ODE):
 
 class _SpectralBaseBridge(SpectralBaseODE):
     def __init__(self, ode: SpectralBaseODE, x0: Tensor, x1: Tensor) -> None:
-        y0 = ode.frame.ambient_to_spectral(x0)
-        y1 = ode.frame.ambient_to_spectral(x1)
+        y0 = ode.space.frame.to_spectral(x0)
+        y1 = ode.space.frame.to_spectral(x1)
         base_bridge = _Bridge(ode=ode.base_ode, x0=y0, x1=y1)
-        super().__init__(base_ode=base_bridge, frame=ode.frame)
+        super().__init__(base_ode=base_bridge, space=ode.space)
 
 
 class Bridge(ODE):

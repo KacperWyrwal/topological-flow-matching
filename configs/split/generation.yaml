@@ -1,0 +1,5 @@
+split: [0.7, 0.1, 0.2]
+seed: ${seed}
+mu0_covariance_mode: full
+mu0_backward_transport: false
+ode: ${ode}

@@ -3,7 +3,7 @@ from torch import Tensor
 
 from topofm.odes.ode import ODE, SpectralBaseODE
 from topofm.odes.trivial_ode import TrivialODE
-from topofm.frames.frame import Frame
+from topofm.spaces import Space
 from topofm.distributions.covariance import Covariance
 
 
@@ -120,11 +120,64 @@ class _PositiveEigenvalueSpectralHeatODE(ODE):
         z0, z1 = self._c_transform(x0, x1)
         return torch.cdist(z0, z1, p=2).square()
 
+    def _Phi10_stable(self, x: Covariance):
+        # D is your vector of -kappa * eigvals
+        # We want to transport from t=1 to t=0 using exp(-D)
+        
+        # 1. Determine precision-specific constants
+        if x.matrix.dtype == torch.float64:
+            eps = 1e-300      # Much smaller log-offset for double precision
+            max_log = 700.0   # Safe limit for exp() in float64
+        else:
+            eps = 1e-40       # Standard for float32
+            max_log = 88.0    # Safe limit for exp() in float32
+
+        # 2. Decompose into Log-Absolute and Signs
+        # matrix: (D, D)
+        log_abs_Sigma = torch.log(x.matrix.abs() + eps)
+        signs = x.matrix.sign()
+        
+        # 3. Perform the 'Sandwich' in log-space (Addition/Subtraction)
+        # log(exp(-Di) * Sigma_ij * exp(-Dj)) = log(Sigma_ij) - Di - Dj
+        # self.D is (D,) -> unsqueeze to (D, 1) and (1, D) for broadcasting
+        log_res = log_abs_Sigma - self.D.unsqueeze(1) - self.D.unsqueeze(0)
+        
+        # 4. Optional: Clamp to prevent Inf if you need to return to linear space
+        # This acts as a spectral filter for extremely high-heat components
+        log_res = torch.clamp(log_res, max=max_log)
+        
+        # Reconstruct the matrix
+        transported_mat = log_res.exp() * signs
+    
+        # REPAIR STEP: Force symmetry and clip negative eigenvalues
+        # This is essential because the transport can "tilt" the matrix 
+        # out of the PSD cone due to floating point noise.
+        
+        # 1. Force Symmetry
+        transported_mat = 0.5 * (transported_mat + transported_mat.mT)
+        
+        # 2. Spectral Clipping
+        # Use eigh because we know the matrix is symmetric now
+        vals, vecs = torch.linalg.eigh(transported_mat)
+        
+        # Use the threshold we discussed earlier based on dtype
+        tol = 1e-6 if transported_mat.dtype == torch.float32 else 1e-15
+        
+        # Clamp to your floor (tol) to ensure it stays invertible/PSD
+        vals = torch.clamp(vals, min=tol)
+        
+        # 3. Reconstruct
+        fixed_mat = vecs @ (vals.unsqueeze(-1) * vecs.mT)
+        
+        return Covariance(fixed_mat)
+
+
     def Phi10(self, x: Tensor | Covariance) -> Tensor | Covariance:
-        Phi_st = torch.exp(self.D)
+        Phi_st = torch.exp(-self.D)
         if isinstance(x, Covariance):
+            # return self._Phi10_stable(x)
             return Covariance(
-                torch.einsum('i,ij,j->ij', Phi_st, x.Sigma, Phi_st)
+                torch.einsum('i,ij,j->ij', Phi_st, x.matrix, Phi_st)
             )
         else:
             return Phi_st * x
@@ -139,13 +192,12 @@ class _SpectralHeatODE(ODE):
             eigvals: (E,)
         """
         super().__init__()
-        # TODO Maybe use a small epsilon instead of 0.0
         self.zero_eigenvalue_ode = TrivialODE()
         self.unsafe_positive_eigenvalue_ode = _PositiveEigenvalueSpectralHeatODE(kappa=kappa, eigvals=eigvals)
 
         # Create safe variant
-        self.zero_eigenvalue_mask = eigvals == 0.0
-        safe_eigvals = torch.where(self.zero_eigenvalue_mask, torch.ones_like(eigvals), eigvals)
+        self.zero_eigenvalue_mask = ((kappa * eigvals) == 0.0)
+        safe_eigvals = torch.where(eigvals == 0.0, torch.ones_like(eigvals), eigvals)
         self.safe_positive_eigenvalue_ode = _PositiveEigenvalueSpectralHeatODE(kappa=kappa, eigvals=safe_eigvals)
 
 
@@ -188,13 +240,12 @@ class _SpectralHeatODE(ODE):
 
 
 class HeatODE(SpectralBaseODE):
-    def __init__(self, kappa: float, eigvals: Tensor, frame: Frame) -> None:
+    def __init__(self, kappa: float, space: Space) -> None:
         """
         Args:
             kappa: float
-            eigval: (E,)
-            frame: The frame. Either Euclidean or Spectral.
+            space: The space.
         """
-        base_ode = _SpectralHeatODE(kappa=kappa, eigvals=eigvals)
-        super().__init__(base_ode=base_ode, frame=frame)
+        base_ode = _SpectralHeatODE(kappa=kappa, eigvals=space.eigvals)
+        super().__init__(base_ode=base_ode, space=space)
         

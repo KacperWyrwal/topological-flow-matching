@@ -1,0 +1,3 @@
+_target_: topofm.odes.heat_ode.HeatODE
+kappa: 2.0
+space: ${space}

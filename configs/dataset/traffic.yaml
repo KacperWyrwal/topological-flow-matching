@@ -1,0 +1,10 @@
+defaults:
+  - override /space@_global_.space: traffic_complex
+  - override /split@_global_.split: generation
+  - _self_
+
+_target_: topofm.data.datasets.traffic.TrafficDataset.from_disk
+dtype: ${dtype}
+device: ${device}
+space: ${space}
+

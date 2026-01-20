@@ -2,8 +2,12 @@ import math
 import numpy as np
 import random
 import torch
+import logging
 from torch import nn, Tensor
 from contextlib import contextmanager
+
+
+logger = logging.getLogger(__name__)
 
 
 @contextmanager
@@ -54,7 +58,34 @@ def to_dtype(dtype: torch.dtype | str) -> torch.dtype:
     return dtype
 
 
-def is_psd(x: Tensor) -> bool:
+def to_device(device: torch.device | str) -> torch.device:
+    """
+    Convert a device to a torch.device.
+
+    Args:
+        device: The device to convert.
+    
+    Returns:
+        The torch.device.
+    """
+    if isinstance(device, str):
+        return torch.device(device)
+    return device
+
+
+def numerical_error_threshold(dtype: torch.dtype) -> float:
+    """
+    Returns the numerical error threshold for a given dtype.
+    """
+    if dtype == torch.float32:
+        return 1e-5
+    elif dtype == torch.float64:
+        return 1e-14
+    else:
+        raise ValueError(f"Unknown dtype: {dtype}")
+
+
+def check_psd(x: Tensor) -> None:
     """
     Check if a matrix is positive semi-definite.
 
@@ -62,11 +93,61 @@ def is_psd(x: Tensor) -> bool:
         x: The matrix to check.
     
     Returns:
-        True if the matrix is positive semi-definite, False otherwise.
-    """
-    _, info = torch.linalg.cholesky_ex(x)
-    return info == 0
+        None
 
+    Raises:
+        ValueError: If the matrix is not positive semi-definite.
+    """
+    eps = numerical_error_threshold(dtype=x.dtype)
+
+    # Check symmetry
+    if not torch.allclose(x, x.mT, atol=eps):
+        raise ValueError("Matrix must be symmetric")
+
+    eigvals = torch.linalg.eigvalsh(x)
+    if torch.any(eigvals < -eps):
+        raise ValueError((
+            "Matrix must be positive semi-definite. "
+            f"Got smallest eigenvalue: {eigvals.min()} "
+            f"The accepted threshold is: {eps}."
+        ))
+
+
+def ensure_psd(x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    """
+    Ensure a matrix is positive semi-definite.
+
+    Args:
+        x: The matrix to ensure.
+    
+    Returns:
+        The positive semi-definite matrix, the eigenvalues, and the eigenvectors.
+    """
+    orig_device, orig_dtype = x.device, x.dtype
+    if x.device.type == 'mps':
+        x = x.detach().cpu()
+    eps = numerical_error_threshold(dtype=x.dtype)
+    x = x.to(torch.float64)
+    eigvals, eigvecs = torch.linalg.eigh(x)
+    if torch.all(eigvals >= -eps) and torch.any(eigvals < 0.0):
+        logger.warning(
+            f"Matrix is not positive semi-definite. "
+            f"Clamping eigenvalues (minimum found: {eigvals.min()}, clamped to: {0.0})"
+        )
+        eigvals = eigvals.clamp(min=0)
+    elif torch.any(eigvals < -eps):
+        raise ValueError((
+            "Matrix must be positive semi-definite. "
+            f"Got smallest eigenvalue: {eigvals.min()} "
+            f"The accepted threshold with dtype {x.dtype} is: {-eps}."
+        ))
+    x = eigvecs @ torch.diag(eigvals) @ eigvecs.mT
+
+    x = x.to(dtype=orig_dtype, device=orig_device)
+    eigvals = eigvals.to(dtype=orig_dtype, device=orig_device)
+    eigvecs = eigvecs.to(dtype=orig_dtype, device=orig_device)
+    return x, eigvals, eigvecs
+    
 
 def sample_moons(shape: torch.Size, *, noise_std: float = 0.05) -> torch.Tensor:
     """Generate samples from the two moons dataset with Gaussian noise.
@@ -100,6 +181,9 @@ def sample_eight_gaussians(
     Returns:
         Tensor of shape (*shape, 2).
     """
+
+    import sklearn
+
     n = math.prod(shape)
     angles = np.linspace(0, 2 * np.pi, 8, endpoint=False)
     centers = np.column_stack([np.cos(angles), np.sin(angles)]) * radius

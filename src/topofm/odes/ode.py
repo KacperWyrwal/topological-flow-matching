@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from torch import Tensor
-from topofm.frames.frame import Frame
+from topofm.spaces import Space
 from topofm.distributions.covariance import Covariance
 
 
@@ -108,49 +108,49 @@ class SpectralBaseODE(ODE):
 
     Args:
         base_ode: The base ODE which operates in the spectral coordinates.
-        frame: The frame.
+        space: The space.
     """
-    def __init__(self, base_ode: ODE, frame: Frame) -> None:
+    def __init__(self, base_ode: ODE, space: Space) -> None:
         super().__init__()
         self.base_ode = base_ode
-        self.frame = frame
+        self.space = space
 
     def b(self, t: Tensor, xt: Tensor) -> Tensor:
-        xt_spectral = self.frame.ambient_to_spectral(xt)
+        xt_spectral = self.space.frame.to_spectral(xt)
         b_spectral = self.base_ode.b(t=t, xt=xt_spectral)
-        return self.frame.spectral_to_ambient(b_spectral)
+        return self.space.frame.from_spectral(b_spectral)
 
     def s(self, t: Tensor, v: Tensor) -> Tensor:
-        v_spectral = self.frame.ambient_to_spectral(v)
+        v_spectral = self.space.frame.to_spectral(v)
         s_spectral = self.base_ode.s(t=t, v=v_spectral)
-        return self.frame.spectral_to_ambient(s_spectral)
+        return self.space.frame.from_spectral(s_spectral)
 
     def v(self, x0: Tensor, x1: Tensor) -> Tensor:
-        x0_spectral = self.frame.ambient_to_spectral(x0)
-        x1_spectral = self.frame.ambient_to_spectral(x1)
+        x0_spectral = self.space.frame.to_spectral(x0)
+        x1_spectral = self.space.frame.to_spectral(x1)
         v_spectral = self.base_ode.v(x0=x0_spectral, x1=x1_spectral)
-        return self.frame.spectral_to_ambient(v_spectral)
+        return self.space.frame.from_spectral(v_spectral)
 
     def sv(self, t: Tensor, x0: Tensor, x1: Tensor) -> Tensor:
-        x0_spectral = self.frame.ambient_to_spectral(x0)
-        x1_spectral = self.frame.ambient_to_spectral(x1)
+        x0_spectral = self.space.frame.to_spectral(x0)
+        x1_spectral = self.space.frame.to_spectral(x1)
         sv_spectral = self.base_ode.sv(t=t, x0=x0_spectral, x1=x1_spectral)
-        return self.frame.spectral_to_ambient(sv_spectral)
+        return self.space.frame.from_spectral(sv_spectral)
 
     def x(self, t: Tensor, x0: Tensor, x1: Tensor) -> Tensor:
-        x0_spectral = self.frame.ambient_to_spectral(x0)
-        x1_spectral = self.frame.ambient_to_spectral(x1)
+        x0_spectral = self.space.frame.to_spectral(x0)
+        x1_spectral = self.space.frame.to_spectral(x1)
         x_spectral = self.base_ode.x(t=t, x0=x0_spectral, x1=x1_spectral)
-        return self.frame.spectral_to_ambient(x_spectral)
+        return self.space.frame.from_spectral(x_spectral)
 
     def c(self, x0: Tensor, x1: Tensor) -> Tensor:
-        x0_spectral = self.frame.ambient_to_spectral(x0)
-        x1_spectral = self.frame.ambient_to_spectral(x1)
+        x0_spectral = self.space.frame.to_spectral(x0)
+        x1_spectral = self.space.frame.to_spectral(x1)
         # cost is preserved under coordinate change
         c = self.base_ode.c(x0=x0_spectral, x1=x1_spectral)
         return c
 
     def Phi10(self, x: Tensor | Covariance) -> Tensor | Covariance:
-        x_spectral = self.frame.ambient_to_spectral(x)
+        x_spectral = self.space.frame.to_spectral(x)
         Phi_spectral = self.base_ode.Phi10(x=x_spectral)
-        return self.frame.spectral_to_ambient(Phi_spectral)
+        return self.space.frame.from_spectral(Phi_spectral)

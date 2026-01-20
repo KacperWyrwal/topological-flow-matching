@@ -1,8 +1,12 @@
+import logging
 from typing import Iterator
 from torch import Tensor
 from topofm.data.datasets.fm_dataset import FMDataset
 from topofm.distributions.boundary.boundary_distribution import BoundaryDistribution
 from topofm.distributions.boundary.empirical_distribution import EmpiricalDistribution
+
+
+logger = logging.getLogger(__name__)
 
 
 class TestFMDataLoader:
@@ -14,22 +18,28 @@ class TestFMDataLoader:
         batch_size: int | None = None,
         num_samples: int | None = None,
     ) -> None:
+        logger.info(f"Initializing TestFMDataLoader with dataset={dataset}, batch_size={batch_size}, num_samples={num_samples}")
         # Process num_samples
         if isinstance(dataset.mu1, EmpiricalDistribution) and isinstance(dataset.mu0, EmpiricalDistribution):
             assert dataset.mu1.samples.shape[0] == dataset.mu0.samples.shape[0], (
                 "If mu0 and mu1 are both empirical, they must have the same number of samples. "
                 f"Got mu0.shape[0]={dataset.mu0.samples.shape[0]} and mu1.shape[0]={dataset.mu1.samples.shape[0]}"
             )
-            num_samples = dataset.mu1.samples.shape[0]
-        elif isinstance(dataset.mu1, EmpiricalDistribution):
-            num_samples = dataset.mu1.samples.shape[0]
-        elif isinstance(dataset.mu0, EmpiricalDistribution):
-            num_samples = dataset.mu0.samples.shape[0]
+            mu0_num_samples = dataset.mu0.samples.shape[0]
+            if num_samples is not None:
+                logger.info((
+                    "Both mu0 and mu1 are empirical distributions. "
+                    f"Ignoring num_samples={num_samples} "
+                    f"and using the number of samples in the distributions ({mu0_num_samples})."
+                ))
+            num_samples = mu0_num_samples
         else:
-            assert num_samples is not None, "num_samples must be specified if mu0 and mu1 are not empirical."
+            assert num_samples is not None, (
+                "num_samples must be specified if mu0 and mu1 are not both empirical. "
+            )
 
         # Process batch_size
-        if batch_size is None:
+        if batch_size is None or batch_size > num_samples:
             batch_size = num_samples
 
         self.mu0 = dataset.mu0
@@ -51,6 +61,8 @@ class TestFMDataLoader:
         """
         if isinstance(mu, EmpiricalDistribution):
             from_idx = batch_num * self.batch_size
+            if from_idx >= mu.samples.shape[0]:
+                return mu.samples[:0]
             to_idx = (batch_num + 1) * self.batch_size
             return mu.samples[from_idx:to_idx]
         else:

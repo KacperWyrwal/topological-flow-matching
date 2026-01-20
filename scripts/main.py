@@ -1,6 +1,5 @@
 import logging
 import torch
-from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate
 from hydra import main
@@ -23,37 +22,27 @@ log = logging.getLogger(__name__)
 
 
 def train_and_test(cfg: DictConfig) -> None:
-    # Set seed
+    # Seed, device, dtype
     seed = cfg.seed
     seed_everything(seed)
-    log.info(f"Seed: {seed}")
-
-    # Parse device
     device = torch.device(cfg.device)
-    log.info(f"Device: {device}")
-    
-    # Parse dtype
     dtype = to_dtype(cfg.dtype)
-    log.info(f"Data type: {dtype}")
 
-    # Callbacks
+    # Callbacks and logger
     early_stopping = instantiate(cfg.train.early_stopping)
     model_checkpoint = instantiate(cfg.train.checkpoint)
-
-    # Logger
     logger = instantiate(cfg.logger, run_config=cfg)
 
-    # Dataset
-    dataset = instantiate(cfg.dataset, device=device, dtype=dtype)
-    frame = dataset.frame
-    eigvals = dataset.eigvals
-    train_dataset, val_dataset, test_dataset = dataset.split(cfg.split, seed=seed)
+    # Space and ODE
+    space = instantiate(cfg.space)
+    ode = instantiate(cfg.ode)
 
-    # ODE
-    ode = instantiate(cfg.ode, frame=frame, eigvals=eigvals)
+    # Dataset
+    dataset = instantiate(cfg.dataset)
+    train_dataset, val_dataset, test_dataset = dataset.split(**cfg.split)
 
     # Coupling
-    coupling = instantiate(cfg.train.coupling, mu0=train_dataset.mu0, mu1=train_dataset.mu1, ode=ode)
+    coupling = instantiate(cfg.train.coupling, mu0=train_dataset.mu0, mu1=train_dataset.mu1)
 
     # Data loaders
     train_loader = TrainFMDataLoader(
@@ -73,7 +62,7 @@ def train_and_test(cfg: DictConfig) -> None:
     )
 
     # Model
-    model = instantiate(cfg.model, input_dim=frame.ambient_dim)
+    model = instantiate(cfg.model, input_dim=space.dim)
     model.to(device=device, dtype=dtype)
 
     # Optimizer
@@ -89,15 +78,19 @@ def train_and_test(cfg: DictConfig) -> None:
         early_stopping=early_stopping,
         model_checkpoint=model_checkpoint,
         logger=logger,
+        space=space,
         val_every_n_samples=cfg.train.val.every_n_samples,
+        eval_coords=cfg.train.val.coords,
     )
 
     test_metrics = engine.evaluate(
         model=model,
         ode=ode,
         data_loader=test_loader,
+        train_space=space,
+        eval_coords=cfg.test.coords,
     )
-    logger.log({f'test/{m}': v for m, v in test_metrics.items()}, step=cfg.test.num_samples)
+    logger.log({f'test/{m}': v for m, v in test_metrics.items()})
     logger.finish()
 
 

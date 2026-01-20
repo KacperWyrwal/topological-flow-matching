@@ -32,7 +32,7 @@ def _change_coordinates_covariance(U: Tensor, cov: Covariance) -> Covariance:
     Returns:
         cov: (E, E)
     """
-    return Covariance(U @ cov.Sigma @ U.T)
+    return Covariance(U @ cov.matrix @ U.T)
 
 
 def change_coordinates(U: Tensor, x: Tensor | Covariance) -> Tensor | Covariance:
@@ -141,3 +141,29 @@ class Frame:
             return x
         else:
             return self.standard_to_spectral(x)
+
+    def to_coordinates(self, x: Tensor, coords: Coordinates | str) -> Tensor:
+        """
+        Args:
+            x: (..., D)
+        Returns:
+            y: (..., E)
+        """
+        coords = Coordinates(coords)
+        if coords == Coordinates.STANDARD:
+            return self.to_standard(x)
+        else:
+            return self.to_spectral(x)
+    
+    def from_coordinates(self, y: Tensor, coords: Coordinates | str) -> Tensor:
+        """
+        Args:
+            y: (..., E)
+        Returns:
+            x: (..., D)
+        """
+        coords = Coordinates(coords)
+        if coords == Coordinates.STANDARD:
+            return self.from_standard(y)
+        else:
+            return self.from_spectral(y)

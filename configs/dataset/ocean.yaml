@@ -1,0 +1,9 @@
+defaults:
+  - override /space@_global_.space: ocean_complex
+  - override /split@_global_.split: matching
+  - _self_
+
+_target_: topofm.data.datasets.ocean.OceanDataset.from_disk
+dtype: ${dtype}
+device: ${device}
+space: ${space}

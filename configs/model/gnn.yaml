@@ -1,6 +1,0 @@
-name: gnn
-hidden_dim: 256
-time_embed_dim: 128
-n_layers: 2
-
-
